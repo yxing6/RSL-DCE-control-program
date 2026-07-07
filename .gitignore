@@ -1,0 +1,16 @@
+# Ignore generated satellite pass data
+*.csv
+CANX2_Pass_*.csv
+
+# Ignore MATLAB autosave and crash files
+*.asv
+matlab_crash_dump.*
+
+# Ignore large MATLAB data workspaces
+*.mat
+
+# Ignore MATLAB compiled binaries and Simulink cache
+*.mex*
+*.mexa64
+*.mexw64
+*.slxc
