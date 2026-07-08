@@ -87,10 +87,30 @@ function numPasses = runPassPrediction(options)
         return;
     end
 
-    %% 7. Ensure the output directory exists
-    if ~isfolder(options.OutputDir)
-        mkdir(options.OutputDir);
+    % %% 7. Create output folder
+    % folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
+    % foldername = sprintf('CANX2_Passes_%s', folderTimeString);
+    % if ~exist(foldername, 'dir')
+    %     mkdir(foldername);
+    % end
+
+    %% 7. Create output folder structure
+    folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
+    
+    % Parent data folder
+    dataFolder = "CANX2 Data";
+    
+    % Individual prediction folder
+    foldername = sprintf('CANX2_Passes_%s', folderTimeString);
+    
+    % Full path: data/CANX2_Passes_20260708_120000
+    outputFolder = fullfile(dataFolder, foldername);
+    
+    % Create folders if they do not exist
+    if ~exist(outputFolder, 'dir')
+        mkdir(outputFolder);
     end
+
 
     %% 8. Calculate essential fields for each pass and save to CSV
     fc = options.Frequency;
@@ -125,10 +145,11 @@ function numPasses = runPassPrediction(options)
 
         timeString = char(string(tStart, 'yyyyMMdd_HHmmss'));
         filename = sprintf('%s_Pass_%d_%s.csv', options.SatName, i, timeString);
-        fullPath = fullfile(options.OutputDir, filename);
 
-        writetimetable(currentPassTable, fullPath);
-        fprintf('Saved: %s\n', fullPath);
+        % Write the timetable to the CSV file
+        filepath = fullfile(outputFolder, filename);
+        writetimetable(currentPassTable, filepath);
+        fprintf('Saved: %s\n', filepath);
     end
 
     %% 9. Optional: open satellite scenario viewer 
