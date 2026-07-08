@@ -80,10 +80,13 @@ function numPasses = runPassPrediction(options)
         return;
     end
 
-    %% 7. Ensure the output directory exists
-    if ~isfolder(options.OutputDir)
-        mkdir(options.OutputDir);
+    %% 7. Create output folder
+    folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
+    foldername = sprintf('CANX2_Passes_%s', folderTimeString);
+    if ~exist(foldername, 'dir')
+        mkdir(foldername);
     end
+
 
     %% 8. Calculate essential fields for each pass and save to CSV
     fc = options.Frequency;
@@ -118,10 +121,11 @@ function numPasses = runPassPrediction(options)
 
         timeString = char(string(tStart, 'yyyyMMdd_HHmmss'));
         filename = sprintf('%s_Pass_%d_%s.csv', options.SatName, i, timeString);
-        fullPath = fullfile(options.OutputDir, filename);
 
-        writetimetable(currentPassTable, fullPath);
-        fprintf('Saved: %s\n', fullPath);
+        % Write the timetable to the CSV file
+        filepath = fullfile(foldername, filename);
+        writetimetable(currentPassTable, filepath);
+        fprintf('Saved: %s\n', filepath);
     end
 
     fprintf('All %d pass(es) successfully exported to CSV files.\n', numPasses);
