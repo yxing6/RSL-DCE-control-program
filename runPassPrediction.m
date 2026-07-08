@@ -80,11 +80,28 @@ function numPasses = runPassPrediction(options)
         return;
     end
 
-    %% 7. Create output folder
+    % %% 7. Create output folder
+    % folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
+    % foldername = sprintf('CANX2_Passes_%s', folderTimeString);
+    % if ~exist(foldername, 'dir')
+    %     mkdir(foldername);
+    % end
+
+    %% 7. Create output folder structure
     folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
+    
+    % Parent data folder
+    dataFolder = "CANX2 Data";
+    
+    % Individual prediction folder
     foldername = sprintf('CANX2_Passes_%s', folderTimeString);
-    if ~exist(foldername, 'dir')
-        mkdir(foldername);
+    
+    % Full path: data/CANX2_Passes_20260708_120000
+    outputFolder = fullfile(dataFolder, foldername);
+    
+    % Create folders if they do not exist
+    if ~exist(outputFolder, 'dir')
+        mkdir(outputFolder);
     end
 
 
@@ -123,7 +140,7 @@ function numPasses = runPassPrediction(options)
         filename = sprintf('%s_Pass_%d_%s.csv', options.SatName, i, timeString);
 
         % Write the timetable to the CSV file
-        filepath = fullfile(foldername, filename);
+        filepath = fullfile(outputFolder, filename);
         writetimetable(currentPassTable, filepath);
         fprintf('Saved: %s\n', filepath);
     end
