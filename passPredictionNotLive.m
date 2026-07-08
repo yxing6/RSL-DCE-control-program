@@ -26,7 +26,7 @@ passes = accessIntervals(ac);
 
 %% 7. Calculate essential fields for each pass and save
 % 1. Define RF parameters
-fc = 437e6;
+fc = 435e6;
 c = physconst('LightSpeed');
 lambda = c / fc;
 
