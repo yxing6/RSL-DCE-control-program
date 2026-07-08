@@ -5,7 +5,7 @@ function numPasses = runPassPrediction(options)
 %   scenario setup, access computation, geometry/Doppler calculation,
 %   and CSV export) so it can be run as a single command, either from
 %   the MATLAB command window or directly from an OS terminal via
-%   "matlab -batch".
+%   "matlab -batch". 
 %
 %   USAGE (from the MATLAB command window):
 %       numPasses = runPassPrediction();
@@ -47,6 +47,7 @@ function numPasses = runPassPrediction(options)
         options.DurationDays (1,1) double  = 1     % edit with the passPrediction.mlx stopTime       
         options.SampleTime   (1,1) double  = 15
         options.OutputDir    (1,1) string  = string(pwd)
+        options.ShowViewer   (1,1) logical = false  %false = scenario is not displayed
     end
 
     %% 1. Define the time window for the pass prediction
@@ -74,6 +75,12 @@ function numPasses = runPassPrediction(options)
     %% 6. Extract pass intervals
     passes = accessIntervals(ac);
     numPasses = height(passes);
+
+    %% Scenario display
+    if options.ShowViewer && batchStartupOptionUsed
+    warning("ShowViewer is not supported in -batch mode. Skipping visualization.");
+    options.ShowViewer = false;
+    end
 
     if numPasses == 0
         fprintf("No passes found in the requested window.\n");
@@ -122,6 +129,18 @@ function numPasses = runPassPrediction(options)
 
         writetimetable(currentPassTable, fullPath);
         fprintf('Saved: %s\n', fullPath);
+    end
+
+    %% 9. Optional: open satellite scenario viewer 
+    % viewer must be launched after all the resource-intensive calculations have been completed
+    % so as not to freeze the animation
+    if options.ShowViewer && ~batchStartupOptionUsed()
+        v = satelliteScenarioViewer(scenario, "PlaybackSpeedMultiplier", 60);
+        groundTrack(sat, "LeadTime", 3600);
+        assignin('base', 'satViewer', v);
+        assignin('base', 'satScenario', scenario);
+        play(scenario);
+        drawnow;
     end
 
     fprintf('All %d pass(es) successfully exported to CSV files.\n', numPasses);
