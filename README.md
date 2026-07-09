@@ -15,16 +15,16 @@ Phased Array System Toolbox
 
 # Repository Structure
 RSL-DCE-control-program/ 
-│ 
-├── runPassPrediction.m # Generates satellite pass predictions and exports RF link profiles 
-├── hardwareLink.m # Reads a pass profile and controls the DCE hardware 
-├── CANX2 Data/ # Generated satellite pass data (CSV files) 
-│ └── CANX2_Passes_<timestamp>/ 
-│       ├── CANX-2_Pass_1_*.csv 
-│       ├── CANX-2_Pass_2_*.csv 
-│       └── ... 
-├── *.tle # Two-Line Element (TLE) files for supported satellites 
-└── README.md
+RSL-DCE-control-program/
+    runPassPrediction.m
+    hardwareLink.m
+    CANX2 Data/
+        CANX2_Passes_<timestamp>/
+            CANX-2_Pass_1_*.csv
+            CANX-2_Pass_2_*.csv
+            ...
+    *.tle
+    README.md
 
 # How to Use
 
