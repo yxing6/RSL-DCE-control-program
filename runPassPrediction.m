@@ -164,7 +164,7 @@ function numPasses = runPassPrediction(options)
         drawnow;
     end
 
-    fprintf('All %d pass(es) successfully exported to CSV files.\n', numPasses);
+    fprintf('All %d pass(es) successfully exported to %s.\n', numPasses,outputFolder);
 end
 
 %[appendix]{"version":"1.0"}
