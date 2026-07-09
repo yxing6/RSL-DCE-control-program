@@ -46,20 +46,17 @@ flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 10);
 if isequal(file, 0)
     error("No CSV file selected.");
 end
-
-selpath = csvPath;  %added
 thisFile = fullfile(path, file);
 fprintf('Reading %s...\n', file);
-numFiles = 1;   %added
-passData = {readtimetable(thisFile)};   %added
+passData = {readtimetable(thisFile)};
 csv_table = readtable(thisFile);    % CSV data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
-%%%%%%%%%%%% added %%%%%%%%% 
-%% Set up the live-plotting figure (created once, reused/reset for each pass)
-% Column mapping confirmed from CSV header:
-%   1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
+% Set Up Pass Data Visualisation (Live Plot)
+    % Column mapping confirmed from CSV header:
+    % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
+
 markerSize = 10;
 
 liveFig = figure('Name', 'Live Pass Metrics', 'Position', [100, 100, 900, 750]);
@@ -83,11 +80,10 @@ plot_dop = scatter(ax4, NaT, NaN, markerSize, 'b', 'filled');
 title(ax4, 'Doppler Shift vs. Time'); ylabel(ax4, 'Doppler (kHz)'); xlabel(ax4, 'Time'); grid(ax4, 'on');
 
 linkaxes([ax1, ax2, ax3, ax4], 'x');
-%%%%%%%%%%%%%
+
+%% Pass Data Visualisation (Live Plot) Loop
 
 for i = 1:length(passData)
-    csv_filename = fullfile(selpath, passNames(i));
-    csv_table = readtable(csv_filename);
 
     % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
     totalPoints = height(csv_table);
@@ -104,48 +100,44 @@ for i = 1:length(passData)
     fixed_att = 125;                                                                 % 150 in DCETest
     channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
-
     % Extract Pre-Calculated Delay From Column F (Column 6)
     channelProfile(:,3) = csv_table{:, 6};                                         
 
     % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
     channelProfile(:,4) = csv_table{:, 7};
 
-    %%%%%% added %%%%%% 
-    % --- Columns used for live plotting (matches exported CSV header) ---
+    % Columns Used for Live Plot
     range_col    = csv_table{:, 2} / 1000;   % Range_m -> km
     pathloss_col = csv_table{:, 5};          % PathLoss_dB
     delay_col    = csv_table{:, 6} * 1000;   % Delay_s -> ms
     doppler_col  = csv_table{:, 7} / 1000;   % Doppler_Hz -> kHz
 
-    % Reset plot buffers for this pass
+    % Reset Plot Buffers For This Pass
     plot_times = NaT(totalPoints, 1, 'TimeZone', raw_times.TimeZone);
     rng_buf   = NaN(totalPoints, 1);
     pl_buf    = NaN(totalPoints, 1);
     delay_buf = NaN(totalPoints, 1);
     dop_buf   = NaN(totalPoints, 1);
 
-    set(liveTitle, 'String', sprintf('Live playback — %s', passNames(i)));
+    set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename(i))); 
     set(plot_rng,   'XData', NaT, 'YData', NaN);
     set(plot_pl,    'XData', NaT, 'YData', NaN);
     set(plot_delay, 'XData', NaT, 'YData', NaN);
     set(plot_dop,   'XData', NaT, 'YData', NaN);
     xlim([ax1, ax2, ax3, ax4], [raw_times(1), raw_times(end)]);
 
-    % --- Fixer les axes Y sur toute la durée du tracé, d'après les valeurs du CSV sélectionné ---
+    % Fix the Plot Y-axes for the Entire Duration of the Plot (based on the values ​​from CSV)
     setFixedYLim(ax1, range_col);
     setFixedYLim(ax2, pathloss_col);
     setFixedYLim(ax3, delay_col);
     setFixedYLim(ax4, doppler_col);
 
     drawnow;
-    %%%%%%%%%%%%
     
-    % Real-time Effect Application Loop
+    %% Real-time Effect Application Loop
     disp("Beginning playback loop.");
     loopTimer = tic;
     effectIndex = 1;
-    totalPoints = size(channelProfile, 1);   % added
     
     n = 0;                                                                          % Counter Used For Testing Attenuation
 
@@ -182,8 +174,7 @@ for i = 1:length(passData)
             % Send command to programmable attenuator
             setAttenuation(att, test_channel, current_db);
     
-            %%%%%% added %%%%%
-            % --- Update live plot buffers up to the current row and redraw ---
+            % Update live plot buffers up to the current row and redraw
             plot_times(effectIndex) = raw_times(effectIndex);
             rng_buf(effectIndex)   = range_col(effectIndex);
             pl_buf(effectIndex)    = pathloss_col(effectIndex);
@@ -195,13 +186,14 @@ for i = 1:length(passData)
             set(plot_delay, 'XData', plot_times(1:effectIndex), 'YData', delay_buf(1:effectIndex));
             set(plot_dop,   'XData', plot_times(1:effectIndex), 'YData', dop_buf(1:effectIndex));
             drawnow limitrate;
-            %%%%%%
     
             % Move to the next row in the CSV profile for the next second
             effectIndex = effectIndex + 1;
         end
     end
+    %% End of Real-time Effect Application Loop
 end
+%% End of Pass Data Visualisation (Live Plot) Loop
 
 % Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
 release(SDR_RX);
@@ -249,7 +241,7 @@ function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
     end
 end
 
-% Applying Channel Impairments Through the SDR
+% Apply Channel Impairments Through the SDR
 function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
     % Compute and apply Doppler Shift
     t = (0:SamplesPerFrame-1)' / fs;
@@ -264,23 +256,19 @@ function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fSh
     delayBuffer = [delayBuffer(SamplesPerFrame + 1 : end); zeros(SamplesPerFrame, 1)];
 end
 
-%%%%%%% added %%%%%%%
-% Fixe l'axe Y d'un subplot en fonction du min/max des données de la passe,
-% avec une petite marge pour la lisibilité (5% de l'étendue, mini 1 unité)
+% Set Y-axis of a Subplot Based on the min/max of the Pass Data
+    % with a small margin for readability (5% of the range, minimum 1 unit)
 function setFixedYLim(ax, dataCol)
-yMax = max(dataCol, [], 'omitnan');
-yMin = min(dataCol, [], 'omitnan');
-
-if isempty(yMax) || isempty(yMin) || isnan(yMax) || isnan(yMin)
-    return; % pas de données valides, on laisse l'auto-scale par défaut
-end
-
-span = yMax - yMin;
-if span == 0
-    margin = max(abs(yMax) * 0.05, 1);
-else
-    margin = span * 0.05;
-end
-
-ylim(ax, [yMin - margin, yMax + margin]);
+    yMax = max(dataCol, [], 'omitnan');
+    yMin = min(dataCol, [], 'omitnan');
+    if isempty(yMax) || isempty(yMin) || isnan(yMax) || isnan(yMin)
+        return; % no valid data, keep default autoscaling
+    end
+    span = yMax - yMin;
+    if span == 0
+        margin = max(abs(yMax) * 0.05, 1);
+    else
+        margin = span * 0.05;
+    end
+    ylim(ax, [yMin - margin, yMax + margin]);
 end
