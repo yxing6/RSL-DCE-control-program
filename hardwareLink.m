@@ -53,6 +53,20 @@ csv_table = readtable(thisFile);    % CSV data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
+
+% Generate CANX-2 Tumbling Attenuation Profile
+enableTumble = true;
+if enableTumble == true
+    DurationSec = seconds(datetime(csv_table{end,1}) - datetime(csv_table{1,1}));
+    [tumble_att_dB] = tumbling_attenuation( ...
+        t, ...
+        ShowPlots=false, ...
+        ShowAnimation=false);
+else
+    tumble_att_dB = zeros(height(csv_table),1);
+end
+
+
 % Set Up Pass Data Visualisation (Live Plot)
     % Column mapping confirmed from CSV header:
     % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
@@ -96,9 +110,12 @@ for i = 1:length(passData)
     % Extract Attenuation From Column E (Column 5)
     channelProfile(:,2) = csv_table{:, 5};
 
+    % Add Attenuation as a Result of Tumbling
+    channelProfile(:,2) = channelProfile(:,2) - tumble_att_dB;
+
     % Normalise Dynamic Attenuation Control by In-line Losses 
     fixed_att = 125;                                                                 % 150 in DCETest
-    channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
+    channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 + fixed_att;
 
     % Extract Pre-Calculated Delay From Column F (Column 6)
     channelProfile(:,3) = csv_table{:, 6};                                         
