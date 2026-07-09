@@ -24,7 +24,8 @@ delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
 SamplesPerFrame = 4096;
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
-OutputDataType = "double";          
+OutputDataType = "double"; 
+enableTumble = false; %enable simulated tumbling of satellite
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -48,22 +49,9 @@ if isequal(file, 0)
 end
 thisFile = fullfile(path, file);
 fprintf('Reading %s...\n', file);
-passData = {readtimetable(thisFile)};
 csv_table = readtable(thisFile);    % CSV data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
-
-
-% Generate CANX-2 Tumbling Attenuation Profile
-enableTumble = true;
-if enableTumble == true
-    [tumble_att_dB] = tumbling_attenuation( ...
-        t, ...
-        ShowPlots=false, ...
-        ShowAnimation=false);
-else
-    tumble_att_dB = zeros(height(csv_table),1);
-end
 
 
 % Set Up Pass Data Visualisation (Live Plot)
@@ -96,8 +84,6 @@ linkaxes([ax1, ax2, ax3, ax4], 'x');
 
 %% Pass Data Visualisation (Live Plot) Loop
 
-for i = 1:length(passData)
-
     % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
     totalPoints = height(csv_table);
     channelProfile = zeros(totalPoints, 4);     % Columns: 1=Time, 2=Atten, 3=Delay, 4=Doppler
@@ -109,12 +95,9 @@ for i = 1:length(passData)
     % Extract Attenuation From Column E (Column 5)
     channelProfile(:,2) = csv_table{:, 5};
 
-    % Add Attenuation as a Result of Tumbling
-    channelProfile(:,2) = channelProfile(:,2) - tumble_att_dB;
-
     % Normalise Dynamic Attenuation Control by In-line Losses 
     fixed_att = 125;                                                                 % 150 in DCETest
-    channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 + fixed_att;
+    channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25-fixed_att;
 
     % Extract Pre-Calculated Delay From Column F (Column 6)
     channelProfile(:,3) = csv_table{:, 6};                                         
@@ -135,7 +118,7 @@ for i = 1:length(passData)
     delay_buf = NaN(totalPoints, 1);
     dop_buf   = NaN(totalPoints, 1);
 
-    set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename(i))); 
+    set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename)); 
     set(plot_rng,   'XData', NaT, 'YData', NaN);
     set(plot_pl,    'XData', NaT, 'YData', NaN);
     set(plot_delay, 'XData', NaT, 'YData', NaN);
@@ -149,6 +132,17 @@ for i = 1:length(passData)
     setFixedYLim(ax4, doppler_col);
 
     drawnow;
+    
+    % Generate CANX-2 Tumbling Attenuation Profile
+    if enableTumble
+        [tumble_att_dB] = tumbling_attenuation( ...
+            channelProfile(:,1), ...
+            ShowPlots=false, ...
+            ShowAnimation=false);
+        % Add Attenuation from Tumbling
+        channelProfile(:,2) = channelProfile(:,2)+ tumble_att_dB;
+    end
+    
     
     %% Real-time Effect Application Loop
     disp("Beginning playback loop.");
@@ -207,8 +201,7 @@ for i = 1:length(passData)
             effectIndex = effectIndex + 1;
         end
     end
-    %% End of Real-time Effect Application Loop
-end
+
 %% End of Pass Data Visualisation (Live Plot) Loop
 
 % Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
