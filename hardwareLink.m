@@ -46,75 +46,160 @@ flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 10);
 if isequal(file, 0)
     error("No CSV file selected.");
 end
+
+selpath = csvPath;  %added
 thisFile = fullfile(path, file);
 fprintf('Reading %s...\n', file);
+numFiles = 1;   %added
+passData = {readtimetable(thisFile)};   %added
 csv_table = readtable(thisFile);    % CSV data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
-% Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
-totalPoints = height(csv_table);
-channelProfile = zeros(totalPoints, 4);     % Columns: 1=Time, 2=Atten, 3=Delay, 4=Doppler
+%%%%%%%%%%%% added %%%%%%%%% 
+%% Set up the live-plotting figure (created once, reused/reset for each pass)
+% Column mapping confirmed from CSV header:
+%   1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
+markerSize = 10;
 
-% Convert the Datetime Column Into Relative Elapsed Seconds Starting at 0
-raw_times = datetime(csv_table{:, 1}); 
-channelProfile(:,1) = seconds(raw_times - raw_times(1)); 
+liveFig = figure('Name', 'Live Pass Metrics', 'Position', [100, 100, 900, 750]);
+tl = tiledlayout(liveFig, 4, 1);
+liveTitle = sgtitle(tl, 'Live playback of recorded pass data');
 
-% Extract Attenuation From Column E (Column 5)
-channelProfile(:,2) = csv_table{:, 5};
+ax1 = nexttile(tl);
+plot_rng = scatter(ax1, NaT, NaN, markerSize, 'b', 'filled');
+title(ax1, 'Range vs. Time'); ylabel(ax1, 'Range (km)'); grid(ax1, 'on');
 
-% Normalise Dynamic Attenuation Control by In-line Losses 
-fixed_att = 125;                                                                 % 150 in DCETest
-channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
+ax2 = nexttile(tl);
+plot_pl = scatter(ax2, NaT, NaN, markerSize, 'b', 'filled');
+title(ax2, 'Path Loss vs. Time'); ylabel(ax2, 'Path Loss (dB)'); grid(ax2, 'on');
 
-% Extract Pre-Calculated Delay From Column F (Column 6)
-channelProfile(:,3) = csv_table{:, 6};                                         
+ax3 = nexttile(tl);
+plot_delay = scatter(ax3, NaT, NaN, markerSize, 'b', 'filled');
+title(ax3, 'Delay vs. Time'); ylabel(ax3, 'Delay (ms)'); grid(ax3, 'on');
 
-% Extract Pre-Calculated Doppler Shift From Column G (Column 7)
-channelProfile(:,4) = csv_table{:, 7};
+ax4 = nexttile(tl);
+plot_dop = scatter(ax4, NaT, NaN, markerSize, 'b', 'filled');
+title(ax4, 'Doppler Shift vs. Time'); ylabel(ax4, 'Doppler (kHz)'); xlabel(ax4, 'Time'); grid(ax4, 'on');
 
-% Real-time Effect Application Loop
-disp("Beginning playback loop.");
-loopTimer = tic;
-effectIndex = 1;
+linkaxes([ax1, ax2, ax3, ax4], 'x');
+%%%%%%%%%%%%%
 
-n = 0;                                                                          % Counter Used For Testing Attenuation
+for i = 1:length(passData)
+    csv_filename = fullfile(selpath, passNames(i));
+    csv_table = readtable(csv_filename);
 
-while (effectIndex <= totalPoints)
-    % Pull a live RF data frame from the USRP Receiver
-    rx_data = SDR_RX();
+    % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
+    totalPoints = height(csv_table);
+    channelProfile = zeros(totalPoints, 4);     % Columns: 1=Time, 2=Atten, 3=Delay, 4=Doppler
 
-    % Extract current parameters from processed profile matrix
-    current_db    = channelProfile(effectIndex, 2);
-    current_delay = channelProfile(effectIndex, 3);
-    current_fShift= channelProfile(effectIndex, 4);
+    % Convert the Datetime Column Into Relative Elapsed Seconds Starting at 0
+    raw_times = datetime(csv_table{:, 1}); 
+    channelProfile(:,1) = seconds(raw_times - raw_times(1)); 
 
-    % Apply a Doppler Shift and Time Delay to the digital waveform array
-    % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
-    calibrated_delay = max(current_delay - delaySDR, 0);
-    [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);        
+    % Extract Attenuation From Column E (Column 5)
+    channelProfile(:,2) = csv_table{:, 5};
 
-    % Transmit the modified waveform out of the USRP Transmitter
-    SDR_TX(tx_data);
+    % Normalise Dynamic Attenuation Control by In-line Losses 
+    fixed_att = 125;                                                                 % 150 in DCETest
+    channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
-    % Update Parameters (slower than the live RF pull)
-    if (channelProfile(effectIndex, 1) <= toc(loopTimer))
 
-        n = n + 0;                                                              % Used For Testing Attenuation
-        current_db = current_db + n;                                            % USed For Testing Attenuation
+    % Extract Pre-Calculated Delay From Column F (Column 6)
+    channelProfile(:,3) = csv_table{:, 6};                                         
 
-        % Prevent sending negative numbers or out-of-bounds values to hardware
-        current_db = max(0, current_db); 
+    % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
+    channelProfile(:,4) = csv_table{:, 7};
 
-        fprintf("Time: %.2fs | Atten: %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
-            toc(loopTimer), current_db, current_delay*1e3, current_fShift);
+    %%%%%% added %%%%%% 
+    % --- Columns used for live plotting (matches exported CSV header) ---
+    range_col    = csv_table{:, 2} / 1000;   % Range_m -> km
+    pathloss_col = csv_table{:, 5};          % PathLoss_dB
+    delay_col    = csv_table{:, 6} * 1000;   % Delay_s -> ms
+    doppler_col  = csv_table{:, 7} / 1000;   % Doppler_Hz -> kHz
 
-        % Send command to programmable attenuator
-        setAttenuation(att, test_channel, current_db);
+    % Reset plot buffers for this pass
+    plot_times = NaT(totalPoints, 1, 'TimeZone', raw_times.TimeZone);
+    rng_buf   = NaN(totalPoints, 1);
+    pl_buf    = NaN(totalPoints, 1);
+    delay_buf = NaN(totalPoints, 1);
+    dop_buf   = NaN(totalPoints, 1);
 
-        % Move to the next row in the CSV profile for the next second
-        effectIndex = effectIndex + 1;
+    set(liveTitle, 'String', sprintf('Live playback — %s', passNames(i)));
+    set(plot_rng,   'XData', NaT, 'YData', NaN);
+    set(plot_pl,    'XData', NaT, 'YData', NaN);
+    set(plot_delay, 'XData', NaT, 'YData', NaN);
+    set(plot_dop,   'XData', NaT, 'YData', NaN);
+    xlim([ax1, ax2, ax3, ax4], [raw_times(1), raw_times(end)]);
+
+    % --- Fixer les axes Y sur toute la durée du tracé, d'après les valeurs du CSV sélectionné ---
+    setFixedYLim(ax1, range_col);
+    setFixedYLim(ax2, pathloss_col);
+    setFixedYLim(ax3, delay_col);
+    setFixedYLim(ax4, doppler_col);
+
+    drawnow;
+    %%%%%%%%%%%%
+    
+    % Real-time Effect Application Loop
+    disp("Beginning playback loop.");
+    loopTimer = tic;
+    effectIndex = 1;
+    totalPoints = size(channelProfile, 1);   % added
+    
+    n = 0;                                                                          % Counter Used For Testing Attenuation
+
+    while (effectIndex <= totalPoints)
+        % Pull a live RF data frame from the USRP Receiver
+        rx_data = SDR_RX();
+    
+        % Extract current parameters from processed profile matrix
+        current_db    = channelProfile(effectIndex, 2);
+        current_delay = channelProfile(effectIndex, 3);
+        current_fShift= channelProfile(effectIndex, 4);
+    
+        % Apply a Doppler Shift and Time Delay to the digital waveform array
+        % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
+        calibrated_delay = max(current_delay - delaySDR, 0);
+        [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
+            rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);        
+    
+        % Transmit the modified waveform out of the USRP Transmitter
+        SDR_TX(tx_data);
+    
+        % Update Parameters (slower than the live RF pull)
+        if (channelProfile(effectIndex, 1) <= toc(loopTimer))
+    
+            n = n + 0;                                                              % Used For Testing Attenuation
+            current_db = current_db + n;                                            % USed For Testing Attenuation
+    
+            % Prevent sending negative numbers or out-of-bounds values to hardware
+            current_db = max(0, current_db); 
+    
+            fprintf("Time: %.2fs | Atten: %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
+                toc(loopTimer), current_db, current_delay*1e3, current_fShift);
+    
+            % Send command to programmable attenuator
+            setAttenuation(att, test_channel, current_db);
+    
+            %%%%%% added %%%%%
+            % --- Update live plot buffers up to the current row and redraw ---
+            plot_times(effectIndex) = raw_times(effectIndex);
+            rng_buf(effectIndex)   = range_col(effectIndex);
+            pl_buf(effectIndex)    = pathloss_col(effectIndex);
+            delay_buf(effectIndex) = delay_col(effectIndex);
+            dop_buf(effectIndex)   = doppler_col(effectIndex);
+    
+            set(plot_rng,   'XData', plot_times(1:effectIndex), 'YData', rng_buf(1:effectIndex));
+            set(plot_pl,    'XData', plot_times(1:effectIndex), 'YData', pl_buf(1:effectIndex));
+            set(plot_delay, 'XData', plot_times(1:effectIndex), 'YData', delay_buf(1:effectIndex));
+            set(plot_dop,   'XData', plot_times(1:effectIndex), 'YData', dop_buf(1:effectIndex));
+            drawnow limitrate;
+            %%%%%%
+    
+            % Move to the next row in the CSV profile for the next second
+            effectIndex = effectIndex + 1;
+        end
     end
 end
 
@@ -177,4 +262,25 @@ function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fSh
     delayBuffer(idx_shift : idx_shift + SamplesPerFrame - 1) = mod_data;
     tx_data = delayBuffer(1:SamplesPerFrame);
     delayBuffer = [delayBuffer(SamplesPerFrame + 1 : end); zeros(SamplesPerFrame, 1)];
+end
+
+%%%%%%% added %%%%%%%
+% Fixe l'axe Y d'un subplot en fonction du min/max des données de la passe,
+% avec une petite marge pour la lisibilité (5% de l'étendue, mini 1 unité)
+function setFixedYLim(ax, dataCol)
+yMax = max(dataCol, [], 'omitnan');
+yMin = min(dataCol, [], 'omitnan');
+
+if isempty(yMax) || isempty(yMin) || isnan(yMax) || isnan(yMin)
+    return; % pas de données valides, on laisse l'auto-scale par défaut
+end
+
+span = yMax - yMin;
+if span == 0
+    margin = max(abs(yMax) * 0.05, 1);
+else
+    margin = span * 0.05;
+end
+
+ylim(ax, [yMin - margin, yMax + margin]);
 end
