@@ -16,4 +16,4 @@ matlab_crash_dump.*
 *.slxc
 
 # Ignore MAC os files
-*.DS_Store
+.DS_Store
