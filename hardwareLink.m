@@ -16,8 +16,10 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 32e6;
-DecimationFactor = 32; InterpolationFactor = DecimationFactor;
+%MasterClockRate = 32e6;
+MasterClockRate = 56e6;          %jitter reduction test
+DecimationFactor = 56;          %jitter reduction test
+%DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = 32e6/32;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
 delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
@@ -26,6 +28,10 @@ delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency c
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = true;                % Enable simulated tumbling of satellite
+
+% --- clock synchronization 10 MHz, jitter reduction test ---
+SDR_RX.ClockSource = 'External';
+SDR_TX.ClockSource = 'External';
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
