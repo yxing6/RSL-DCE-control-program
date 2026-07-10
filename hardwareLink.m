@@ -53,11 +53,9 @@ csv_table = readtable(thisFile);    % CSV data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
-
 % Set Up Pass Data Visualisation (Live Plot)
     % Column mapping confirmed from CSV header:
     % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
-
 markerSize = 10;
 
 liveFig = figure('Name', 'Live Pass Metrics', 'Position', [100, 100, 900, 750]);
@@ -128,7 +126,6 @@ setFixedYLim(ax1, range_col);
 setFixedYLim(ax2, pathloss_col);
 setFixedYLim(ax3, delay_col);
 setFixedYLim(ax4, doppler_col);
-
 drawnow;
 
 % Generate CANX-2 Tumbling Attenuation Profile
@@ -145,6 +142,7 @@ end
 disp("Beginning playback loop.");
 loopTimer = tic;
 effectIndex = 1;
+last_hardware_db = -1;                                                          % Used in upsampling, untested as of Jul 9
 
 n = 0;                                                                          % Counter Used For Testing Attenuation
 
@@ -179,7 +177,11 @@ while (effectIndex <= totalPoints)
             toc(loopTimer), current_db, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
-        setAttenuation(att, test_channel, current_db);
+        if current_db ~= last_hardware_db                                       % Used in upsampling, untested as of Jul 9
+                setAttenuation(att, test_channel, current_db);
+                last_hardware_db = current_db;
+        end
+        %setAttenuation(att, test_channel, current_db);                         % Temporarily replaced for upsampling test, untested as of Jul 9
 
         % Update live plot buffers up to the current row and redraw
         plot_times(effectIndex) = raw_times(effectIndex);
@@ -252,6 +254,7 @@ function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fSh
     phaseShift = 2 * pi * fShift * t;
     mod_data = data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
+    % phaseOffset = mod(phaseOffset + phaseShift(end), 2 * pi);                         % This is the suggested change to the line above
 
     % Apply Delay Through Circularly Shifted Buffer               
     idx_shift = max(round(delay * fs), 1);
