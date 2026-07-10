@@ -25,7 +25,10 @@ SamplesPerFrame = 4096;
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
+<<<<<<< HEAD
 enableTumble = true;                % Enable simulated random tumbling of satellite
+=======
+enableTumble = true;               % Enable simulated tumbling of satellite
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -109,8 +112,22 @@ channelProfile(:,2) = csv_table{:, 5};
 pathloss_att = channelProfile(:,2);
 
 % Normalise Dynamic Attenuation Control by In-line Losses 
+<<<<<<< HEAD
 fixed_att = 125; % 150 in DCETest
+=======
+fixed_att = 125;
+>>>>>>> 7c1fbb77ce4123df2ab0e27605db896b2d2c6bf5
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
+
+% Generate CANX-2 Tumbling Attenuation Profile
+if enableTumble
+    [tumble_att_dB] = tumbling_attenuation( ...
+        channelProfile(:,1), ...
+        ShowPlots=false, ...
+        ShowAnimation=false);
+    % Add Attenuation from Tumbling
+    channelProfile(:,2) = channelProfile(:,2) + tumble_att_dB;
+end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
@@ -181,9 +198,7 @@ drawnow;
 disp("Beginning playback loop.");
 loopTimer = tic;
 effectIndex = 1;
-last_hardware_db = -1;                                                          % Used in upsampling, untested as of Jul 9
-
-n = 0;                                                                          % Counter Used For Testing Attenuation
+last_hardware_db = -1;                                                   
 
 while (effectIndex <= totalPoints)
     % Pull a live RF data frame from the USRP Receiver
@@ -208,9 +223,6 @@ while (effectIndex <= totalPoints)
     % Update Parameters (slower than the live RF pull)
     if (channelProfile(effectIndex, 1) <= toc(loopTimer))
 
-        n = n + 0;                                                              % Used For Testing Attenuation
-        current_db = current_db + n;                                            % USed For Testing Attenuation
-
         % Prevent sending negative numbers or out-of-bounds values to hardware
         current_db = max(0, current_db); 
 
@@ -219,11 +231,10 @@ while (effectIndex <= totalPoints)
             toc(loopTimer), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
-        if current_db ~= last_hardware_db                                       % Used in upsampling, untested as of Jul 9
+        if current_db ~= last_hardware_db
                 setAttenuation(att, test_channel, current_db);
                 last_hardware_db = current_db;
         end
-        %setAttenuation(att, test_channel, current_db);                         % Temporarily replaced for upsampling test, untested as of Jul 9
 
         % Update live plot buffers up to the current row and redraw
         plot_times(effectIndex) = raw_times(effectIndex);

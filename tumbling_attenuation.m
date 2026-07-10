@@ -1,4 +1,4 @@
-function [attenuation_dB] = tumbling_attenuation(t, options)
+function [pointing_loss_dB, components] = tumbling_attenuation(t, options)
 % TUMBLING_ATTENUATION Simulate CanX-2 antenna pointing loss from tumbling.
 %
 % This function wraps the full attitude-dynamics workflow (rigid-body
@@ -26,9 +26,15 @@ function [attenuation_dB] = tumbling_attenuation(t, options)
 %   PlaybackSpeed          (double)  Animation speed multiple of real-time. Default: 20
 %
 % OUTPUT:
-%   attenuation_dB  Total attenuation (pointing loss + random fade), dB
-%   components      Struct with off_axis_angle_deg, pointing_loss_dB,
-%                    random_fade_dB, and tumble_correction_enabled
+%   attenuation_dB  - Attenuation due to tumbling (pointing loss), in dB
+%
+%   components      - Struct containing intermediate tumble parameters:
+%   MomentOfInertia                 Satellite moments of inertia [kg*m^2]
+%   InitialPointingError_rad        Initial roll/pitch/yaw error [rad]
+%   InitialAngularVelocity_rad_s    Initial angular velocity [rad/s]
+%   off_axis_angle_deg              Boresight off-axis angle [deg]
+%   pointing_loss_dB                Antenna pointing loss [dB]
+%   attenuation_dB                  Total tumble attenuation [dB]
 
 arguments
     t                              (:,1) double  
@@ -40,8 +46,6 @@ arguments
     options.BeamwidthDeg           (1,1) double  = 34       % antenna half-power beamwidth, deg (approximation)
     options.SampleTime             (1,1) double  = 1        % time step, s
     options.MaxTumbleRateDeg       (1,1) double  = 0.5        % max |initial rate| per axis, deg/s
-    options.FadeTauSec             (1,1) double  = 5        % random-fade correlation time, s (approximation)
-    options.FadeSigmaDB            (1,1) double  = 0.5      % random-fade 1-sigma depth, dB (approximation)
     options.AttenuationCapDB       (1,1) double  = 30       % sidelobe-floor cap, dB (approximation)
     options.ShowPlots              (1,1) logical = true
     options.ShowAnimation          (1,1) logical = true
@@ -106,42 +110,27 @@ for k = 1:num_steps
     pointing_loss_dB(k) = min(options.AttenuationCapDB, 12*(off_axis_angle_deg(k)/options.BeamwidthDeg)^2);
 end
 
-% Independent Random Fade (SDR-side gain uncertainty)
-% Represents small-scale RF effects not captured by the deterministic
-% antenna-pattern geometry (local multipath, gain-pattern ripple, small-
-% scale scintillation). Modeled as Ornstein-Uhlenbeck
-% process, clipped non-negative.
-dt = median(diff(t));
-af = exp(-dt/options.FadeTauSec);
-bf = options.FadeSigmaDB*sqrt(1 - af^2);
-
-random_fade_dB = zeros(num_steps,1);
-for k = 2:num_steps
-    random_fade_dB(k) = max(0, random_fade_dB(k-1)*af + bf*randn);
-end
-
-attenuation_dB = min(options.AttenuationCapDB, pointing_loss_dB + random_fade_dB);
+components = struct( ...
+    'MomentOfInertia', J, ...
+    'InitialPointingError_rad', [roll0, pitch0, yaw0], ...
+    'InitialAngularVelocity_rad_s', omega0, ...
+    'off_axis_angle_deg', off_axis_angle_deg, ...
+    'pointing_loss_dB', pointing_loss_dB);
 
 % Plotting
 if options.ShowPlots
     figure('Color','w','Position',[100 100 900 700])
 
-    subplot(3,1,1)
+    subplot(2,1,1)
     plot(t, off_axis_angle_deg, 'LineWidth',2)
     grid on
     title(sprintf('%s Antenna Pointing Error', options.SatName))
     xlabel('Time (s)'); ylabel('Off-Axis Angle (deg)')
 
-    subplot(3,1,2)
-    plot(t, random_fade_dB, 'LineWidth',2)
-    grid on
-    title('Independent Random Fade (SDR-side gain uncertainty)')
-    xlabel('Time (s)'); ylabel('Fade (dB)')
-
-    subplot(3,1,3)
+    subplot(2,1,2)
     plot(t, pointing_loss_dB, '--', 'LineWidth',1.2); hold on
     plot(t, attenuation_dB, 'LineWidth',2);
-    legend('Pointing loss only','Total attenuation','Location','best')
+    legend('Pointing loss','Location','best')
     grid on
     title('Resulting Signal Attenuation Profile')
     xlabel('Time (s)'); ylabel('Attenuation (dB)')
