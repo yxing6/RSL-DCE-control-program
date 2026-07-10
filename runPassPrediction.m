@@ -23,7 +23,7 @@ function numPasses = runPassPrediction(options)
 %       GSLon           (double)  Ground station longitude (deg). Default: -123.2460
 %       GSName          (string)  Ground station display name.    Default: "UBC-MCLD"
 %       MinElevation    (double)  Elevation mask angle (deg).     Default: 10.0
-%       Frequency       (double)  Carrier frequency (Hz).         Default: 437e6
+%       Frequency       (double)  Carrier frequency (Hz).         Default: 435e6
 %       DurationDays    (double)  Prediction window length (days).Default: 0.5
 %       SampleTime      (double)  Scenario/geometry sample time (s). Default: 15
 %       OutputDir       (string)  Folder where CSV files are saved. Default: pwd
@@ -44,6 +44,7 @@ function numPasses = runPassPrediction(options)
         options.GSName       (1,1) string  = "UBC-MCLD"
         options.MinElevation (1,1) double  = 10.0
         options.Frequency    (1,1) double  = 435e6 % refer to DCE system diagram 
+
         options.DurationDays (1,1) double  = 1     % edit with the passPrediction.mlx stopTime       
         options.SampleTime   (1,1) double  = 0.25
         options.OutputDir    (1,1) string  = string(pwd)

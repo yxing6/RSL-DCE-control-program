@@ -16,20 +16,18 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-%MasterClockRate = 32e6;
-MasterClockRate = 56e6;          %jitter reduction test
-DecimationFactor = 56;          %jitter reduction test
-%DecimationFactor = 32; InterpolationFactor = DecimationFactor;
+MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
+DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
 fs = 32e6/32;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
 delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
-SamplesPerFrame = 4096;
+SamplesPerFrame = 16384;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableTumble = true;                % Enable simulated tumbling of satellite
+enableTumble = false;                % Enable simulated tumbling of satellite
 
-% --- clock synchronization 10 MHz, jitter reduction test ---
+% Clock Synchronisation (10 MHz) For Anti-jitter
 SDR_RX.ClockSource = 'External';
 SDR_TX.ClockSource = 'External';
 
@@ -115,7 +113,7 @@ channelProfile(:,2) = csv_table{:, 5};
 pathloss_att = channelProfile(:,2);
 
 % Normalise Dynamic Attenuation Control by In-line Losses 
-fixed_att = 125;                                                                                % 150 in DCETest
+fixed_att = 125;            % 150 in DCETest
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
 % Generate CANX-2 Tumbling Attenuation Profile
@@ -201,11 +199,11 @@ while (effectIndex <= totalPoints)
     rx_data = SDR_RX();
 
     % Extract current parameters from processed profile matrix
-    current_db    = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
-    current_pathloss = pathloss_att(effectIndex);
+    current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
+    current_pathloss  = pathloss_att(effectIndex);
     current_tumbleatt = tumble_att_dB(effectIndex);
-    current_delay = channelProfile(effectIndex, 3);
-    current_fShift= channelProfile(effectIndex, 4);
+    current_delay     = channelProfile(effectIndex, 3);
+    current_fShift    = channelProfile(effectIndex, 4);
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
@@ -234,10 +232,10 @@ while (effectIndex <= totalPoints)
 
         % Update live plot buffers up to the current row and redraw
         plot_times(effectIndex) = raw_times(effectIndex);
-        rng_buf(effectIndex)   = range_col(effectIndex);
-        pl_buf(effectIndex)    = pathloss_col(effectIndex);
-        delay_buf(effectIndex) = delay_col(effectIndex);
-        dop_buf(effectIndex)   = doppler_col(effectIndex);
+        rng_buf(effectIndex)    = range_col(effectIndex);
+        pl_buf(effectIndex)     = pathloss_col(effectIndex);
+        delay_buf(effectIndex)  = delay_col(effectIndex);
+        dop_buf(effectIndex)    = doppler_col(effectIndex);
 
         set(plot_rng,   'XData', plot_times(1:effectIndex), 'YData', rng_buf(1:effectIndex));
         set(plot_pl,    'XData', plot_times(1:effectIndex), 'YData', pl_buf(1:effectIndex));
