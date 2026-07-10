@@ -25,7 +25,7 @@ SamplesPerFrame = 4096;
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableTumble = true;                % Enable simulated tumbling of satellite
+enableTumble = true;                % Enable simulated random tumbling of satellite
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -59,26 +59,40 @@ fprintf('Loaded %s\n', file);
 markerSize = 10;
 
 liveFig = figure('Name', 'Live Pass Metrics', 'Position', [100, 100, 900, 750]);
-tl = tiledlayout(liveFig, 4, 1);
+numPlots = 4 + enableTumble;
+tl = tiledlayout(liveFig,numPlots,1);
 liveTitle = sgtitle(tl, 'Live playback of recorded pass data');
 
+% initialize plot for range
 ax1 = nexttile(tl);
 plot_rng = scatter(ax1, NaT, NaN, markerSize, 'b', 'filled');
 title(ax1, 'Range vs. Time'); ylabel(ax1, 'Range (km)'); grid(ax1, 'on');
 
+% initialize plot for path loss
 ax2 = nexttile(tl);
 plot_pl = scatter(ax2, NaT, NaN, markerSize, 'b', 'filled');
 title(ax2, 'Path Loss vs. Time'); ylabel(ax2, 'Path Loss (dB)'); grid(ax2, 'on');
 
+% initialize plot for delay
 ax3 = nexttile(tl);
 plot_delay = scatter(ax3, NaT, NaN, markerSize, 'b', 'filled');
 title(ax3, 'Delay vs. Time'); ylabel(ax3, 'Delay (ms)'); grid(ax3, 'on');
 
+% initialize plot for doppler shift
 ax4 = nexttile(tl);
 plot_dop = scatter(ax4, NaT, NaN, markerSize, 'b', 'filled');
 title(ax4, 'Doppler Shift vs. Time'); ylabel(ax4, 'Doppler (kHz)'); xlabel(ax4, 'Time'); grid(ax4, 'on');
 
-linkaxes([ax1, ax2, ax3, ax4], 'x');
+% if tumbling enabled, initialize plot for tumble related attenuation
+if enableTumble
+    ax5 = nexttile(tl);
+    plot_tumble = scatter(ax5, NaT, NaN, markerSize, 'b', 'filled');
+    title(ax5, 'Pointing Loss (Tumbling) vs. Time'); ylabel(ax5, 'Attenuation (dB)'); xlabel(ax5, 'Time'); grid(ax5, 'on');
+    
+    linkaxes([ax1, ax2, ax3, ax4, ax5], 'x');
+else
+    linkaxes([ax1, ax2, ax3, ax4], 'x');
+end
 
 % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
 totalPoints = height(csv_table);
@@ -91,8 +105,11 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 % Extract Attenuation From Column E (Column 5)
 channelProfile(:,2) = csv_table{:, 5};
 
+% Generate Path Loss Attenuation Vector
+pathloss_att = channelProfile(:,2);
+
 % Normalise Dynamic Attenuation Control by In-line Losses 
-fixed_att = 125;                                                                 % 150 in DCETest
+fixed_att = 125; % 150 in DCETest
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
@@ -100,6 +117,30 @@ channelProfile(:,3) = csv_table{:, 6};
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
+
+% Generate CANX-2 Tumbling Attenuation Profile
+tumble_att_dB = zeros(totalPoints,1);
+if enableTumble
+    [tumble_att_dB, components] = tumbling_attenuation( ...
+        channelProfile(:,1), ...
+        ShowPlots=false, ...
+        ShowAnimation=false);
+    fprintf('Random Tumbling Profile Generated\n');
+    
+    % Display initial tumble conditions
+    fprintf('Initial Pointing Error:\n');
+    fprintf('  Roll:  %.2f deg\n', rad2deg(components.InitialPointingError_rad(1)));
+    fprintf('  Pitch: %.2f deg\n', rad2deg(components.InitialPointingError_rad(2)));
+    fprintf('  Yaw:   %.2f deg\n', rad2deg(components.InitialPointingError_rad(3)));
+
+    fprintf('Initial Angular Velocity:\n');
+    fprintf('  Wx: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(1)));
+    fprintf('  Wy: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(2)));
+    fprintf('  Wz: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(3)));
+
+    % Add attenuation from tumbling to channel model
+    channelProfile(:,2) = channelProfile(:,2) + tumble_att_dB;
+end
 
 % Columns Used for Live Plot
 range_col    = csv_table{:, 2} / 1000;   % Range_m -> km
@@ -113,13 +154,21 @@ rng_buf   = NaN(totalPoints, 1);
 pl_buf    = NaN(totalPoints, 1);
 delay_buf = NaN(totalPoints, 1);
 dop_buf   = NaN(totalPoints, 1);
+tumb_buf = NaN(totalPoints,1);
 
 set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename)); 
 set(plot_rng,   'XData', NaT, 'YData', NaN);
 set(plot_pl,    'XData', NaT, 'YData', NaN);
 set(plot_delay, 'XData', NaT, 'YData', NaN);
 set(plot_dop,   'XData', NaT, 'YData', NaN);
-xlim([ax1, ax2, ax3, ax4], [raw_times(1), raw_times(end)]);
+
+if enableTumble
+    xlim([ax1, ax2, ax3, ax4, ax5], [raw_times(1), raw_times(end)]);
+    set(plot_tumble,   'XData', NaT, 'YData', NaN);
+    setFixedYLim(ax5, tumble_att_dB); % fix Y-axis of axis 5
+else
+    xlim([ax1, ax2, ax3, ax4], [raw_times(1), raw_times(end)]);
+end
 
 % Fix the Plot Y-axes for the Entire Duration of the Plot (based on the values ​​from CSV)
 setFixedYLim(ax1, range_col);
@@ -127,16 +176,6 @@ setFixedYLim(ax2, pathloss_col);
 setFixedYLim(ax3, delay_col);
 setFixedYLim(ax4, doppler_col);
 drawnow;
-
-% Generate CANX-2 Tumbling Attenuation Profile
-if enableTumble
-    [tumble_att_dB] = tumbling_attenuation( ...
-        channelProfile(:,1), ...
-        ShowPlots=false, ...
-        ShowAnimation=false);
-    % Add Attenuation from Tumbling
-    channelProfile(:,2) = channelProfile(:,2) - tumble_att_dB;
-end
 
 % Real-time Effect Application Loop
 disp("Beginning playback loop.");
@@ -151,7 +190,9 @@ while (effectIndex <= totalPoints)
     rx_data = SDR_RX();
 
     % Extract current parameters from processed profile matrix
-    current_db    = channelProfile(effectIndex, 2);
+    current_db    = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
+    current_pathloss = pathloss_att(effectIndex);
+    current_tumbleatt = tumble_att_dB(effectIndex);
     current_delay = channelProfile(effectIndex, 3);
     current_fShift= channelProfile(effectIndex, 4);
 
@@ -173,8 +214,9 @@ while (effectIndex <= totalPoints)
         % Prevent sending negative numbers or out-of-bounds values to hardware
         current_db = max(0, current_db); 
 
-        fprintf("Time: %.2fs | Atten: %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
-            toc(loopTimer), current_db, current_delay*1e3, current_fShift);
+        % ADD VALUE FOR RICIAN FADING WHEN ADDED
+        fprintf("Time: %.2fs | Total Atten: %.2f dB |Path Loss Atten: %.2f dB | Pointing Loss (Tumbling): %.2f dB | Rician Fading (dB): %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
+            toc(loopTimer), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
         if current_db ~= last_hardware_db                                       % Used in upsampling, untested as of Jul 9
@@ -194,6 +236,12 @@ while (effectIndex <= totalPoints)
         set(plot_pl,    'XData', plot_times(1:effectIndex), 'YData', pl_buf(1:effectIndex));
         set(plot_delay, 'XData', plot_times(1:effectIndex), 'YData', delay_buf(1:effectIndex));
         set(plot_dop,   'XData', plot_times(1:effectIndex), 'YData', dop_buf(1:effectIndex));
+
+        if enableTumble
+            tumb_buf(effectIndex)   = tumble_att_dB(effectIndex);
+            set(plot_tumble,   'XData', plot_times(1:effectIndex), 'YData', tumb_buf(1:effectIndex));
+        end
+
         drawnow limitrate;
 
         % Move to the next row in the CSV profile for the next second
