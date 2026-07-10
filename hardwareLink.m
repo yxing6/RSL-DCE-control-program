@@ -25,10 +25,7 @@ SamplesPerFrame = 4096;
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-<<<<<<< HEAD
-enableTumble = true;                % Enable simulated random tumbling of satellite
-=======
-enableTumble = true;               % Enable simulated tumbling of satellite
+enableTumble = true;                % Enable simulated tumbling of satellite
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -66,27 +63,27 @@ numPlots = 4 + enableTumble;
 tl = tiledlayout(liveFig,numPlots,1);
 liveTitle = sgtitle(tl, 'Live playback of recorded pass data');
 
-% initialize plot for range
+% Initialize plot for range
 ax1 = nexttile(tl);
 plot_rng = scatter(ax1, NaT, NaN, markerSize, 'b', 'filled');
 title(ax1, 'Range vs. Time'); ylabel(ax1, 'Range (km)'); grid(ax1, 'on');
 
-% initialize plot for path loss
+% Initialize plot for path loss
 ax2 = nexttile(tl);
 plot_pl = scatter(ax2, NaT, NaN, markerSize, 'b', 'filled');
 title(ax2, 'Path Loss vs. Time'); ylabel(ax2, 'Path Loss (dB)'); grid(ax2, 'on');
 
-% initialize plot for delay
+% Initialize plot for delay
 ax3 = nexttile(tl);
 plot_delay = scatter(ax3, NaT, NaN, markerSize, 'b', 'filled');
 title(ax3, 'Delay vs. Time'); ylabel(ax3, 'Delay (ms)'); grid(ax3, 'on');
 
-% initialize plot for doppler shift
+% Initialize plot for doppler shift
 ax4 = nexttile(tl);
 plot_dop = scatter(ax4, NaT, NaN, markerSize, 'b', 'filled');
 title(ax4, 'Doppler Shift vs. Time'); ylabel(ax4, 'Doppler (kHz)'); xlabel(ax4, 'Time'); grid(ax4, 'on');
 
-% if tumbling enabled, initialize plot for tumble related attenuation
+% Initialize plot for tumble related attenuation (if tumble is enabled)
 if enableTumble
     ax5 = nexttile(tl);
     plot_tumble = scatter(ax5, NaT, NaN, markerSize, 'b', 'filled');
@@ -112,11 +109,7 @@ channelProfile(:,2) = csv_table{:, 5};
 pathloss_att = channelProfile(:,2);
 
 % Normalise Dynamic Attenuation Control by In-line Losses 
-<<<<<<< HEAD
-fixed_att = 125; % 150 in DCETest
-=======
-fixed_att = 125;
->>>>>>> 7c1fbb77ce4123df2ab0e27605db896b2d2c6bf5
+fixed_att = 125;                                                                                % 150 in DCETest
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
 % Generate CANX-2 Tumbling Attenuation Profile
@@ -154,9 +147,6 @@ if enableTumble
     fprintf('  Wx: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(1)));
     fprintf('  Wy: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(2)));
     fprintf('  Wz: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(3)));
-
-    % Add attenuation from tumbling to channel model
-    channelProfile(:,2) = channelProfile(:,2) + tumble_att_dB;
 end
 
 % Columns Used for Live Plot
@@ -313,7 +303,6 @@ function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fSh
     phaseShift = 2 * pi * fShift * t;
     mod_data = data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
-    % phaseOffset = mod(phaseOffset + phaseShift(end), 2 * pi);                         % This is the suggested change to the line above
 
     % Apply Delay Through Circularly Shifted Buffer               
     idx_shift = max(round(delay * fs), 1);
