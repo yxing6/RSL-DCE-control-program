@@ -45,9 +45,9 @@ function numPasses = runPassPrediction(options)
         options.MinElevation (1,1) double  = 10.0
         options.Frequency    (1,1) double  = 435e6 % refer to DCE system diagram 
         options.DurationDays (1,1) double  = 1     % edit with the passPrediction.mlx stopTime       
-        options.SampleTime   (1,1) double  = 15
+        options.SampleTime   (1,1) double  = 0.25
         options.OutputDir    (1,1) string  = string(pwd)
-        options.ShowViewer   (1,1) logical = false  %false = scenario is not displayed
+        options.ShowViewer   (1,1) logical = false  % false = scenario is not displayed
     end
 
     %% 1. Define the time window for the pass prediction
