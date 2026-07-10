@@ -143,6 +143,8 @@ function numPasses = runPassPrediction(options)
             'VariableNames', {'Range_m', 'Azimuth_deg', 'Elevation_deg', ...
                               'PathLoss_dB', 'Delay_s', 'Doppler_Hz', 'Rel_Velocity_mps'});
 
+        currentPassTable.t.Format = 'yyyy-MM-dd HH:mm:ss.SSS';
+
         timeString = char(string(tStart, 'yyyyMMdd_HHmmss'));
         filename = sprintf('%s_Pass_%d_%s.csv', options.SatName, i, timeString);
 
