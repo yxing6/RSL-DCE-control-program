@@ -11,9 +11,11 @@ function [pointing_loss_dB, components] = tumbling_attenuation(t, options)
 %
 % NAME-VALUE ARGUMENTS (all optional, defaults shown below):
 %   SatName                (string)  Display name of the satellite. Default: "CANX-2"
-%   Jx                     (double)  Roll-axis moment of inertia (kg*m^2). Default: 0.0366
-%   Jy                     (double)  Pitch-axis moment of inertia (kg*m^2). Default: 0.0300
-%   Jz                     (double)  Yaw-axis moment of inertia (kg*m^2). Default: 0.0058
+%   x_dim                     (1,1) double  = 0.1   % m
+%   y_dim                     (1,1) double  = 0.1   % m
+%   z_dim                    (1,1) double  = 0.3   
+%   mass                      (1,1) double  = 4   % kg
+%   AntennaType            (1,1) string  = "Half-Wave Dipole"  % options: Half-Wave Dipole or Parabolic Dish
 %   BeamwidthDeg           (double)  Antenna half-power beamwidth (deg). Default: 34
 %   SampleTime             (double)  Time step for the sim/animation (s). Default: 1
 %   MaxTumbleRateDeg       (double)  Max |initial rate| per axis, uniform [-max,max] (deg/s). Default: 2
@@ -31,32 +33,33 @@ function [pointing_loss_dB, components] = tumbling_attenuation(t, options)
 %   InitialAngularVelocity_rad_s    Initial angular velocity [rad/s]
 %   off_axis_angle_deg              Boresight off-axis angle [deg]
 %   pointing_loss_dB                Antenna pointing loss [dB]
-%   attenuation_dB                  Total tumble attenuation [dB]
 
+%%
 arguments
     t                              (:,1) double  
 
     options.SatName                (1,1) string  = "CANX-2"
-    % options.Jx                     (1,1) double  = 0.0366   % roll axis, kg*m^2 (approximation)
-    % options.Jy                     (1,1) double  = 0.0300   % pitch axis, kg*m^2 (approximation)
-    % options.Jz                     (1,1) double  = 0.0058   % yaw axis, kg*m^2 (approximation)
-    
     options.x_dim                     (1,1) double  = 0.1   % m
     options.y_dim                     (1,1) double  = 0.1   % m
     options.z_dim                     (1,1) double  = 0.3   % m
     options.mass                      (1,1) double  = 4   % kg
-
+    options.AntennaType            (1,1) string  = "Half-Wave Dipole"  % options: Half-Wave Dipole or Parabolic Dish
     options.BeamwidthDeg           (1,1) double  = 34       % antenna half-power beamwidth, deg (approximation)
     options.SampleTime             (1,1) double  = 1        % time step, s
     options.AttenuationCapDB       (1,1) double  = 60       % sidelobe-floor cap, dB (approximation)
     options.ShowPlots              (1,1) logical = true
-    options.ShowAnimation          (1,1) logical = true
+    options.ShowAnimation          (1,1) logical = false
     options.PlaybackSpeed          (1,1) double  = 5       % animation speed, x real-time
-    options.TumbleSeverity          (1,1) string = "none"
+    options.TumbleSeverity          (1,1) string = "moderate" 
 end
 
-% NEED TO FIX HEADER/FUNCTION USAGE STATEMENT, NOT ALL VARIABLES
-% INCLUDED/USED
+% Change if using a parabolic dish to match geometry
+r = 1;   % Dish Radius meters
+
+%ADD SOMETHING THAT SOLVES FOR K0
+k0=2*pi/*freq2wavelen(freq)
+
+%%
 
 % WANT TO SWITCH TO CASES SUCH AS EXTREME TUMBLE, RE-SYNCHRONIZING, ETC.
 switch lower(options.TumbleSeverity)
@@ -107,10 +110,9 @@ b=options.y_dim;
 c=options.z_dim;
 
 % Calculate principal moments of inertia
-Jx = (1/12)*m*(b^2+c^2);
-Jy = (1/12)*m*(a^2+c^2);
-Jz = (1/12)*m*(a^2+b^2);
-
+Jx = (1/12)*m*(b^2+c^2); % roll axis, kg*m^2
+Jy = (1/12)*m*(a^2+c^2); % pitch axis, kg*m^2
+Jz = (1/12)*m*(a^2+b^2); % yaw axis, kg*m^2
 J = [Jx, Jy, Jz]; % Principal moments of inertia vector (assumes off-diagonal elements of the matrix are zero)
 
 % Run Attitude Dynamics
@@ -143,23 +145,33 @@ for k = 1:num_steps
     antenna_inertial = R * antenna_body;
 
     dot_product = dot(antenna_inertial, ground_station_inertial);
-    dot_product = max(-1, min(1, dot_product)); % clamp for numerical safety
+    dot_product = max(-1, min(1, dot_product)); % clamp
     theta = acos(dot_product);
     off_axis_angle_deg(k) = rad2deg(theta);
 
-    % SHOULD REFINE TO HAVE USER SELECT SATELLITE TYPE 
-    % NEED TO FIX VARIABLE NAME (ie pointing_loss_dB_2), WILL LIKELY USE A  
-    % IF-ELSE TO DETERMINE SAT TYPE
+    %Calulate gain based on antenna type, user can add unique radiation
+    %patterns for patch, helical etc. antennas
+    switch lower(options.AntennaType)
+    
+        case "dipole"
+            gain = (cos(pi/2*cos(theta))/sin(theta))^2;
+            pointing_loss_dB(k) = min(-10*log10(gain), options.AttenuationCapDB);
+     
+        case "parabolic dish"
+            % Uniform circular aperture
+            u = k0*a*sin(theta);
+            if abs(u) < 1e-10
+                E = 1;   
+            else
+                E = 2*besselj(1,u)/u;
+            end
+            gain = E^2;
+            pointing_loss_dB(k) = min(-10*log10(gain), options.AttenuationCapDB);
+    
+        otherwise
+            error('Unsupported AntennaType: %s', options.AntennaType);
+    end
 
-    % Parabolic Dish
-    gain = min(options.AttenuationCapDB, 12*(off_axis_angle_deg(k)/options.BeamwidthDeg)^2);
-    pointing_loss_dB(k) = min(options.AttenuationCapDB, gain);
-
-
-    % Half-Wave Dipole (G=1.64)
-    gain_2 = (cos(pi/2*cos(theta))/sin(theta))^2;
-    pointing_loss_dB_2(k) = -10*log10(gain_2);
-    pointing_loss_dB_2(k) = min(pointing_loss_dB_2(k), options.AttenuationCapDB);
 end
 
 components = struct( ...
@@ -183,9 +195,7 @@ if options.ShowPlots
     subplot(2,1,2)
     hold on
     plot(t, pointing_loss_dB, '-', 'LineWidth',1.2); hold on
-    plot(t, pointing_loss_dB_2, '--', 'LineWidth',1.2)
-    % WILL ONLY PLOT THE ACTUAL ANTENNA TYPE, WORK IN PROGRESS
-    legend('Parabolic Dish','Half Wave Dipole')
+    legend(sprintf('%s', options.AntennaType))
     grid on
     title('Pointing Loss Profile')
     xlabel('Time (s)'); ylabel('Attenuation (dB)')
