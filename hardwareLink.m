@@ -26,13 +26,11 @@ delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency c
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;                % Enable simulated tumbling of satellite
-freqOffsetHz = 20e3;   % Offset volontaire pour éviter la notch DC du AD9361 (Hz)
-                        % Le générateur doit être réglé sur CenterFrequency + freqOffsetHz
+freqOffsetHz = 20e3;   % Voluntary offset to avoid the AD9361's DC notch (Hz)
+                       
 
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fprintf("!!! Régler le générateur de signal sur %.6f MHz (soit %.0f MHz + %.0f kHz) !!!\n", ...
+%%%%%%%%%%% generator must be set to CenterFrequency + freqOffsetHz 
+fprintf("!!! Set the signal generator on %.6f MHz ( %.0f MHz + %.0f kHz) !!!\n", ...
     (CenterFrequency + freqOffsetHz)/1e6, CenterFrequency/1e6, freqOffsetHz/1e3);
 
 % Initialize USRP RX and TX System Objects
@@ -46,7 +44,7 @@ cleanupAtt = onCleanup(@() clear('att'));
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
 
-%%%%%%%%%%%%%%%%%%%%% addition %%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%% to synchronize B210 & signal generator %%%%%%%%%%%%%%%%
 % Verify External 10 MHz Reference Lock Before Proceeding
 disp("Checking external 10 MHz reference lock...");
 pause(1);  % Give the radio a moment to attempt lock after object creation
@@ -223,10 +221,7 @@ while (effectIndex <= totalPoints)
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
-    % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-    %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs); 
-
-    %%%%%%% test offset
+    % added freqOffsetHz so subtracting it now to keep the desired center frequency
     [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
         rx_data, current_fShift - freqOffsetHz, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
 
