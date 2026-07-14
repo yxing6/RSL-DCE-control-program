@@ -27,9 +27,9 @@ phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;                % Enable simulated tumbling of satellite
 
-% Clock Synchronisation (10 MHz) For Anti-jitter
-SDR_RX.ClockSource = 'External';
-SDR_TX.ClockSource = 'External';
+% % Clock Synchronisation (10 MHz) For Anti-jitter
+% SDR_RX.ClockSource = 'External';
+% SDR_TX.ClockSource = 'External';
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -41,6 +41,16 @@ disp("Initializing USRP SDR Hardware...");
 cleanupAtt = onCleanup(@() clear('att')); 
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
+
+%%%%%%%%%%%%%%%%%%%%% addition %%%%%%%%%%%%%%%%%%%
+% Verify External 10 MHz Reference Lock Before Proceeding
+disp("Checking external 10 MHz reference lock...");
+pause(1);  % Give the radio a moment to attempt lock after object creation
+if ~referenceLockedStatus(SDR_RX)           % SDR_RX & TX share the same clock : 1 test is enough
+    error("SDR_RX is not locked to the external 10 MHz reference. Check REF OUT -> REF IN cabling and that the signal generator's reference output is enabled.");
+end
+disp("External reference locked successfully.");
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
@@ -286,10 +296,11 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame);
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External");
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
-    CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor);
+    CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...
+    ClockSource="External");
 end
 
 % Flush SDR RX/TX Buffers for Specified Duration
