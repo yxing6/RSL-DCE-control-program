@@ -1,102 +1,136 @@
-function [pointing_loss_dB, components] = tumbling_attenuation(t, options)
-% TUMBLING_ATTENUATION Simulate CanX-2 antenna pointing loss from tumbling.
+function [pointing_loss_dB, components] = tumbling_attenuation(t, freq, options)
+% TUMBLING_ATTENUATION Simulate antenna pointing loss due to CubeSat tumbling.
 %
-% This function similates antenna tumbling based on initial parameters and
-% generates pointing associated losses.
+% This function simulates the attitude dynamics of a tumbling CubeSat and
+% computes the resulting antenna pointing loss over time. The user can
+% specify the satellite dimensions, mass properties, tumble severity,
+% antenna type, and visualization options. The output includes the
+% time-varying pointing loss along with intermediate attitude and pointing
+% parameters.
 %
-% USAGE (from the MATLAB command window):
-%   [t, attenuation_dB] = tumbling_attenuation(DurationSec);
-%   [t, attenuation_dB] = tumbling_attenuation(DurationSec, MaxTumbleRateDeg=5, ...
-%       ShowPlots=true);
+% INPUTS:
+%   t      - Time vector (s)
+%   freq   - Operating frequency (Hz)
 %
-% NAME-VALUE ARGUMENTS (all optional, defaults shown below):
-%   SatName                (string)  Display name of the satellite. Default: "CANX-2"
-%   x_dim                     (1,1) double  = 0.1   % m
-%   y_dim                     (1,1) double  = 0.1   % m
-%   z_dim                    (1,1) double  = 0.3   
-%   mass                      (1,1) double  = 4   % kg
-%   AntennaType            (1,1) string  = "Half-Wave Dipole"  % options: Half-Wave Dipole or Parabolic Dish
-%   BeamwidthDeg           (double)  Antenna half-power beamwidth (deg). Default: 34
-%   SampleTime             (double)  Time step for the sim/animation (s). Default: 1
-%   MaxTumbleRateDeg       (double)  Max |initial rate| per axis, uniform [-max,max] (deg/s). Default: 2
-%   AttenuationCapDB       (double)  Sidelobe-floor attenuation cap (dB). Default: 30
-%   ShowPlots              (logical) Show the pointing-error/attenuation plots. Default: true
-%   ShowAnimation          (logical) Show the 3D tumble animation. Default: true
-%   PlaybackSpeed          (double)  Animation speed multiple of real-time. Default: 20
+% NAME-VALUE ARGUMENTS (optional, defaults shown in the arguments block):
+%   SatName             Display name of the satellite.
+%   x_dim               Satellite x-dimension (m).
+%   y_dim               Satellite y-dimension (m).
+%   z_dim               Satellite z-dimension (m).
+%   mass                Satellite mass (kg).
+%   AntennaType         Antenna radiation pattern model. Supported options:
+%                         - "Half-Wave Dipole"
+%                         - "Quarter-Wave Monopole"
+%                         - "Dish"
+%   r                   Dish radius (m), used only for the parabolic dish.
+%   AttenuationCapDB    Maximum pointing loss applied to the radiation
+%                       pattern (dB).
+%   ShowPlots           Display pointing error and attenuation plots.
+%   ShowAnimation       Display a 3-D spacecraft tumble animation.
+%   PlaybackSpeed       Animation playback speed relative to real time.
+%   TestCase      Test Cases. Supported options:
+%                         - "stable"
+%                         - "drift"
+%                         - "desynchronization"
+%                         - "deployment"
+%                         - "end-over-end"
+%                         - "extreme"
 %
-% OUTPUT:
-%   attenuation_dB  - Attenuation due to tumbling (pointing loss), in dB
+% OUTPUTS:
+%   pointing_loss_dB    Antenna pointing loss (dB) as a function of time.
 %
-%   components      - Struct containing intermediate tumble parameters:
-%   MomentOfInertia                 Satellite moments of inertia [kg*m^2]
-%   InitialPointingError_rad        Initial roll/pitch/yaw error [rad]
-%   InitialAngularVelocity_rad_s    Initial angular velocity [rad/s]
-%   off_axis_angle_deg              Boresight off-axis angle [deg]
-%   pointing_loss_dB                Antenna pointing loss [dB]
+%   components          Structure containing intermediate simulation data:
+%       TumbleType                  Selected tumble case.
+%       MomentOfInertia             Principal moments of inertia (kg·m²).
+%       InitialPointingError_rad    Initial attitude quaternion.
+%       InitialAngularVelocity_rad_s Initial angular velocity vector (rad/s).
+%       off_axis_angle_deg          Antenna boresight off-axis angle (deg).
+%       pointing_loss_dB            Pointing loss (dB).
 
 %%
 arguments
-    t                              (:,1) double  
-
+    t                              (:,1) double                     % s
+    freq                           (1,1) double                     % Hz
     options.SatName                (1,1) string  = "CANX-2"
-    options.x_dim                     (1,1) double  = 0.1   % m
-    options.y_dim                     (1,1) double  = 0.1   % m
-    options.z_dim                     (1,1) double  = 0.3   % m
-    options.mass                      (1,1) double  = 4   % kg
-    options.AntennaType            (1,1) string  = "Half-Wave Dipole"  % options: Half-Wave Dipole or Parabolic Dish
-    options.BeamwidthDeg           (1,1) double  = 34       % antenna half-power beamwidth, deg (approximation)
-    options.SampleTime             (1,1) double  = 1        % time step, s
-    options.AttenuationCapDB       (1,1) double  = 60       % sidelobe-floor cap, dB (approximation)
+    options.x_dim                  (1,1) double  = 0.1              % m
+    options.y_dim                  (1,1) double  = 0.1              % m
+    options.z_dim                  (1,1) double  = 0.3              % m
+    options.mass                   (1,1) double  = 4                % kg
+    options.AntennaType            (1,1) string  = "Half-Wave Dipole" 
+    options.DishRadius             (1,1) double = 1;                % m
+    options.AttenuationCapDB       (1,1) double  = 60               % dB
     options.ShowPlots              (1,1) logical = true
     options.ShowAnimation          (1,1) logical = false
-    options.PlaybackSpeed          (1,1) double  = 5       % animation speed, x real-time
-    options.TumbleSeverity          (1,1) string = "moderate" 
+    options.PlaybackSpeed          (1,1) double  = 5                % animation speed, x real-time
+    options.TestCase               (1,1) string = "stable" 
 end
 
-% Change if using a parabolic dish to match geometry
-r = 1;   % Dish Radius meters
-
-%ADD SOMETHING THAT SOLVES FOR K0
-k0=2*pi/*freq2wavelen(freq)
+% Wavenumber
+k0=2*pi/freq2wavelen(freq);
+% Dish Radius (if applicable)
+r=options.DishRadius;
 
 %%
 
-% WANT TO SWITCH TO CASES SUCH AS EXTREME TUMBLE, RE-SYNCHRONIZING, ETC.
-switch lower(options.TumbleSeverity)
-    case "none"
-        tumble_rate_deg = 0.1; %deg/s
-        roll0=0;
-        pitch0=0;
-        yaw0=0;
+% Test Cases
+switch lower(options.TestCase)
 
-    case "mild"
-        tumble_rate_deg = 2;
-        roll0=0;
-        pitch0=0;
-        yaw0=0;
-    case "moderate"
-        tumble_rate_deg = 20;
-        roll0=0;
-        pitch0=0;
-        yaw0=0;
+    case "stable"
+        % Nominal Earth-pointing with negligible residual motion
+        roll0  = 0;
+        pitch0 = 0;
+        yaw0   = 0;
 
-    case "violent"
-        tumble_rate_deg = 90;
+        omega0 = deg2rad([0; 0; 0.1]);
+
+    case "drift"
+        % Small pointing error with slow attitude drift
+        roll0  = deg2rad(3);
+        pitch0 = deg2rad(-2);
+        yaw0   = deg2rad(5);
+
+        omega0 = deg2rad([0.2; 0.1; 0.4]);
+
+    case "desynchronization" % NOT SURE HOW TO EFFECTIVELY MODEL THIS
+        % Loss of attitude lock following nominal pointing
+        roll0  = deg2rad(20);
+        pitch0 = deg2rad(-15);
+        yaw0   = deg2rad(30);
+
+        omega0 = deg2rad([2; 1; 0.5]);
+
+    case "deployment"
+        % Typical post-deployment tumble
         roll0  = deg2rad(360*rand);
-        pitch0 = deg2rad(asin(2*rand-1)); % sin(pitch) should be uniform, equal prob, accounts for earth geometry
+        pitch0 = asin(2*rand - 1);
         yaw0   = deg2rad(360*rand);
+
+        omega_axis = randn(3,1);
+        omega_axis = omega_axis / norm(omega_axis);
+        omega0 = deg2rad(60) * omega_axis;
+
+    case "end-over-end"
+        % Rotation about principal axis
+        roll0  = 0;
+        pitch0 = 0;
+        yaw0   = 0;
+
+        omega0 = deg2rad([90; 0; 0]);
 
     case "extreme"
-        tumble_rate_deg = 180;
+        % High-rate tumble
         roll0  = deg2rad(360*rand);
-        pitch0 = deg2rad(asin(2*rand-1)); % sin(pitch) should be uniform, equal prob, accounts for earth geometry
+        pitch0 = asin(2*rand - 1);
         yaw0   = deg2rad(360*rand);
-end
 
-% Generate random tumble axis and angular velocity vector
-omega_axis = randn(3,1);
-omega_axis = omega_axis/norm(omega_axis);
-omega0 = deg2rad(tumble_rate_deg)*omega_axis;
+        omega_axis = randn(3,1);
+        omega_axis = omega_axis / norm(omega_axis);
+        omega0 = deg2rad(180) * omega_axis;
+
+    otherwise
+        error('Unknown tumble scenario: %s', options.TumbleSeverity);
+
+end
 
 % Initial pointing error as a quatrion
 q0 = euler2quat(roll0,pitch0,yaw0);
@@ -152,24 +186,31 @@ for k = 1:num_steps
     %Calulate gain based on antenna type, user can add unique radiation
     %patterns for patch, helical etc. antennas
     switch lower(options.AntennaType)
+        case "half-wave dipole"
+            theta_eff = pi/2 - theta;
+            theta_eff = max(theta_eff,1e-12); %remove singularities
+            gain = (cos(pi/2*cos(theta_eff))/sin(theta_eff))^2;
+            gain = max(gain, 10^(-options.AttenuationCapDB/10));
+            pointing_loss_dB(k) = -10*log10(gain);
     
-        case "dipole"
-            gain = (cos(pi/2*cos(theta))/sin(theta))^2;
-            pointing_loss_dB(k) = min(-10*log10(gain), options.AttenuationCapDB);
-     
-        case "parabolic dish"
-            % Uniform circular aperture
-            u = k0*a*sin(theta);
+        case "quarter-wave monopole"
+            theta_eff = pi/2 - theta;
+            theta_eff = max(theta_eff,1e-12); %remove singularities
+            gain = (cos(pi/2*cos(theta_eff))/sin(theta_eff))^2;
+            gain = max(gain, 10^(-options.AttenuationCapDB/10));
+            pointing_loss_dB(k) = -10*log10(gain);
+    
+        case "dish"
+            theta_eff=theta; %mounted boresight
+            u = k0*options.r*sin(theta_eff);
             if abs(u) < 1e-10
-                E = 1;   
+                E = 1;
             else
                 E = 2*besselj(1,u)/u;
             end
             gain = E^2;
-            pointing_loss_dB(k) = min(-10*log10(gain), options.AttenuationCapDB);
-    
-        otherwise
-            error('Unsupported AntennaType: %s', options.AntennaType);
+            gain = max(gain, 10^(-options.AttenuationCapDB/10));
+            pointing_loss_dB(k) = -10*log10(gain);
     end
 
 end
