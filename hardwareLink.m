@@ -26,10 +26,16 @@ delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency c
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;                % Enable simulated tumbling of satellite
+freqOffsetHz = 20e3;   % Offset volontaire pour éviter la notch DC du AD9361 (Hz)
+                        % Le générateur doit être réglé sur CenterFrequency + freqOffsetHz
 
 % % Clock Synchronisation (10 MHz) For Anti-jitter
 % SDR_RX.ClockSource = 'External';
 % SDR_TX.ClockSource = 'External';
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fprintf("!!! Régler le générateur de signal sur %.6f MHz (soit %.0f MHz + %.0f kHz) !!!\n", ...
+    (CenterFrequency + freqOffsetHz)/1e6, CenterFrequency/1e6, freqOffsetHz/1e3);
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -142,6 +148,12 @@ channelProfile(:,3) = csv_table{:, 6};
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
 
+%%%%%%%%%%addition offset test
+fprintf('Doppler CSV — min: %.2f Hz, max: %.2f Hz, plage: %.2f Hz\n', ...
+    min(channelProfile(:,4)), max(channelProfile(:,4)), ...
+    max(channelProfile(:,4)) - min(channelProfile(:,4)));
+
+
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
 if enableTumble
@@ -218,8 +230,12 @@ while (effectIndex <= totalPoints)
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
+    % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
+    %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs); 
+
+    %%%%%%% test offset
     [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);        
+        rx_data, current_fShift - freqOffsetHz, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
