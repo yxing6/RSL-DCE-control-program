@@ -26,10 +26,12 @@ delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency c
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;                % Enable simulated tumbling of satellite
+freqOffsetHz = 20e3;   % Voluntary offset to avoid the AD9361's DC notch (Hz)
+                       
 
-% % Clock Synchronisation (10 MHz) For Anti-jitter
-% SDR_RX.ClockSource = 'External';
-% SDR_TX.ClockSource = 'External';
+%%%%%%%%%%% generator must be set to CenterFrequency + freqOffsetHz 
+fprintf("!!! Set the signal generator on %.6f MHz ( %.0f MHz + %.0f kHz) !!!\n", ...
+    (CenterFrequency + freqOffsetHz)/1e6, CenterFrequency/1e6, freqOffsetHz/1e3);
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -42,7 +44,7 @@ cleanupAtt = onCleanup(@() clear('att'));
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
 
-%%%%%%%%%%%%%%%%%%%%% addition %%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%% to synchronize B210 & signal generator %%%%%%%%%%%%%%%%
 % Verify External 10 MHz Reference Lock Before Proceeding
 disp("Checking external 10 MHz reference lock...");
 pause(1);  % Give the radio a moment to attempt lock after object creation
@@ -142,6 +144,7 @@ channelProfile(:,3) = csv_table{:, 6};
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
 
+
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
 if enableTumble
@@ -218,8 +221,9 @@ while (effectIndex <= totalPoints)
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
+    % added freqOffsetHz so subtracting it now to keep the desired center frequency
     [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);        
+        rx_data, current_fShift - freqOffsetHz, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
