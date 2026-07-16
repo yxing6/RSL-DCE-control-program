@@ -27,10 +27,39 @@ pause(0.2);
     rxGain, txGain, MasterClockRate, DecimationFactor, InterpolationFactor, ...
     OutputDataType, SamplesPerFrame);
 
+pause(0.5);   % addition : allow the PLL/LO on the B210 time to stabilise
+
+% disp("Flushing...");
+% for i = 1:10
+%     flush_data = SDR_RX();
+%     SDR_TX(flush_data);
+% end
+
 disp("Flushing...");
-for i = 1:10
-    flush_data = SDR_RX();
-    SDR_TX(flush_data);
+
+nCleanRequired = 20;   % required number of consecutive error-free frames
+maxFlushIter   = 200;  % safeguard to prevent an infinite loop
+consecClean    = 0;
+iter           = 0;
+
+flush_data = zeros(SamplesPerFrame,1);  % first flush TX empty
+
+while consecClean < nCleanRequired && iter < maxFlushIter
+    [flush_data, ~, rxOv] = SDR_RX();
+    txUn = SDR_TX(flush_data);
+
+    if ~rxOv && ~txUn
+        consecClean = consecClean + 1;
+    else
+        consecClean = 0;   % start again from scratch as soon as an error occurs
+    end
+    iter = iter + 1;
+end
+
+if iter >= maxFlushIter
+    warning('Flush not stabilised after %d iterations (persistent under/overrun).', maxFlushIter);
+else
+    fprintf('Flush stabilised after %d iterations (%d consecutive clean frames).\n', iter, consecClean);
 end
 
 % Barker 13 coded pulse
@@ -63,6 +92,10 @@ clear att;
 delaySDR_measured_samples = median(measuredDelaySamples);
 delaySDR_measured_seconds = delaySDR_measured_samples / fs;
 delayStd_samples = std(measuredDelaySamples);
+% addition:determine whether an entire run switches to the other value
+fprintf('Delay min/max sur ce run : %d / %d samples (écart = %d)\n', ...
+    min(measuredDelaySamples), max(measuredDelaySamples), ...
+    max(measuredDelaySamples)-min(measuredDelaySamples));
 
 fprintf('Measured physical delay (via the actual hardware chain) : %.1f samples (%.3f ms), standard deviation = %.1f samples\n', ...
     delaySDR_measured_samples, delaySDR_measured_seconds*1e3, delayStd_samples);
