@@ -71,20 +71,47 @@ pulseStart = 100;
 testPulse = zeros(SamplesPerFrame,1);
 testPulse(pulseStart : pulseStart+numel(barkerWaveform)-1) = barkerWaveform;
 
+% nTrials = 30;
+% measuredDelaySamples = zeros(nTrials,1);
+% 
+% for k = 1:nTrials
+%     txUnderrun = SDR_TX(testPulse);
+%     [rx_data, ~, rxOverrun] = SDR_RX();
+%     [c, lags] = xcorr(rx_data, testPulse);
+%     [~, idxMax] = max(abs(c));
+%     measuredDelaySamples(k) = lags(idxMax);
+%     underrunLog(k) = txUnderrun;
+%     overrunLog(k) = rxOverrun;
+% 
+%     flush_data = SDR_RX(); SDR_TX(flush_data);
+% end
+
 nTrials = 30;
 measuredDelaySamples = zeros(nTrials,1);
+rxTimestampLog = zeros(nTrials,1);   % seconds, USRP hardware clock
 
 for k = 1:nTrials
     txUnderrun = SDR_TX(testPulse);
-    [rx_data, ~, rxOverrun] = SDR_RX();
+    [rx_data, rxTimestamp, rxOverrun] = SDR_RX();
     [c, lags] = xcorr(rx_data, testPulse);
     [~, idxMax] = max(abs(c));
     measuredDelaySamples(k) = lags(idxMax);
     underrunLog(k) = txUnderrun;
     overrunLog(k) = rxOverrun;
+    rxTimestampLog(k) = double(rxTimestamp.Integer) + double(rxTimestamp.Fraction);
 
     flush_data = SDR_RX(); SDR_TX(flush_data);
 end
+
+%%%%%
+% Check whether the RX stream has been continuous between trials (no frame skips)
+expectedFrameDuration = SamplesPerFrame / fs;   % theoretical duration of a frame, in s
+tsIntervals = diff(rxTimestampLog);             % actual difference between consecutive RX timestamps
+nFramesGap = round(tsIntervals / expectedFrameDuration) - 1;  % Number of frames 'skipped' between two trials
+%%%%%
+
+fprintf('Frames skipped between trials (should be 0 if continuous) :\n');
+disp(nFramesGap');
 
 release(SDR_RX); release(SDR_TX);
 clear att;
@@ -93,7 +120,7 @@ delaySDR_measured_samples = median(measuredDelaySamples);
 delaySDR_measured_seconds = delaySDR_measured_samples / fs;
 delayStd_samples = std(measuredDelaySamples);
 % addition:determine whether an entire run switches to the other value
-fprintf('Delay min/max sur ce run : %d / %d samples (écart = %d)\n', ...
+fprintf('Delay min/max for this run : %d / %d samples (écart = %d)\n', ...
     min(measuredDelaySamples), max(measuredDelaySamples), ...
     max(measuredDelaySamples)-min(measuredDelaySamples));
 
@@ -129,17 +156,25 @@ xline(measuredDelaySamples(end), 'r--', 'Detected delay');
 title('Correlation magnitude |xcorr(rx\_data, testPulse)|');
 xlabel('Lag (samples)'); ylabel('|c|'); grid on;
 
-%% test
-fprintf('Trial %d: delay=%d, delay mod frame=%d\n', k, measuredDelaySamples(k), mod(measuredDelaySamples(k), SamplesPerFrame));
+% %% test
+% fprintf('Trial %d: delay=%d, delay mod frame=%d\n', k, measuredDelaySamples(k), mod(measuredDelaySamples(k), SamplesPerFrame));
 
 %% --- Log CSV of calibration ---
+% calibTable = table( ...
+%     datetime('now'), string(Platform), string(SerialNum), CenterFrequency, fs, ...
+%     SamplesPerFrame, rxGain, txGain, calibAttenuation_dB, nTrials, ...
+%     delaySDR_measured_samples, delaySDR_measured_seconds, delayStd_samples, ...
+%     'VariableNames', {'Timestamp','Platform','SerialNum','CenterFrequency_Hz','fs_Hz', ...
+%     'SamplesPerFrame','RxGain_dB','TxGain_dB','AttenuatorSetting_dB','NumTrials', ...
+%     'DelayMedian_samples','DelayMedian_s','DelayStd_samples'});
+
 calibTable = table( ...
     datetime('now'), string(Platform), string(SerialNum), CenterFrequency, fs, ...
     SamplesPerFrame, rxGain, txGain, calibAttenuation_dB, nTrials, ...
-    delaySDR_measured_samples, delaySDR_measured_seconds, delayStd_samples, ...
+    delaySDR_measured_samples, delaySDR_measured_seconds, delayStd_samples, rxTimestampLog(1), ...
     'VariableNames', {'Timestamp','Platform','SerialNum','CenterFrequency_Hz','fs_Hz', ...
     'SamplesPerFrame','RxGain_dB','TxGain_dB','AttenuatorSetting_dB','NumTrials', ...
-    'DelayMedian_samples','DelayMedian_s','DelayStd_samples'});
+    'DelayMedian_samples','DelayMedian_s','DelayStd_samples','RxHW_Timestamp_s'});
 
 calibFolder = fullfile(pwd, 'DCE_Calibration_Log');
 if ~exist(calibFolder, 'dir'); mkdir(calibFolder); end
@@ -177,11 +212,13 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="Internal",LocalOscillatorOffset=1e6);
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="Internal",LocalOscillatorOffset=1e6, ...
+    PPSSource="Internal",TimestampMode="high-precision");
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...
-    ClockSource="Internal",LocalOscillatorOffset=1e6);
+    ClockSource="Internal",LocalOscillatorOffset=1e6, ...
+    PPSSource="Internal");
 end
 
 % Flush SDR RX/TX Buffers for Specified Duration
