@@ -46,11 +46,13 @@ nTrials = 30;
 measuredDelaySamples = zeros(nTrials,1);
 
 for k = 1:nTrials
-    SDR_TX(testPulse);
-    rx_data = SDR_RX();
+    txUnderrun = SDR_TX(testPulse);
+    [rx_data, ~, rxOverrun] = SDR_RX();
     [c, lags] = xcorr(rx_data, testPulse);
     [~, idxMax] = max(abs(c));
     measuredDelaySamples(k) = lags(idxMax);
+    underrunLog(k) = txUnderrun;
+    overrunLog(k) = rxOverrun;
 
     flush_data = SDR_RX(); SDR_TX(flush_data);
 end
@@ -64,6 +66,11 @@ delayStd_samples = std(measuredDelaySamples);
 
 fprintf('Measured physical delay (via the actual hardware chain) : %.1f samples (%.3f ms), standard deviation = %.1f samples\n', ...
     delaySDR_measured_samples, delaySDR_measured_seconds*1e3, delayStd_samples);
+
+figure;
+stem(1:nTrials, measuredDelaySamples); hold on;
+plot(find(overrunLog | underrunLog), measuredDelaySamples(overrunLog | underrunLog), 'ro', 'MarkerSize',10);
+title('Delay per trial (red = under/overrun flagged)');
 
 %%
 % Plot TX pulse, RX capture, and correlation (from the last trial)
