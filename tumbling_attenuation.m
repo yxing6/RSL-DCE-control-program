@@ -22,13 +22,13 @@ function [pointing_loss_dB, components] = tumbling_attenuation(t, freq, options)
 %                         - "Half-Wave Dipole"
 %                         - "Quarter-Wave Monopole"
 %                         - "Dish"
-%   r                   Dish radius (m), used only for the parabolic dish.
+%   DishRadius          Dish radius (m), used only for the parabolic dish.
 %   AttenuationCapDB    Maximum pointing loss applied to the radiation
 %                       pattern (dB).
 %   ShowPlots           Display pointing error and attenuation plots.
 %   ShowAnimation       Display a 3-D spacecraft tumble animation.
 %   PlaybackSpeed       Animation playback speed relative to real time.
-%   TestCase      Test Cases. Supported options:
+%   TestCase            Test Cases. Supported options:
 %                         - "stable"
 %                         - "drift"
 %                         - "desynchronization"

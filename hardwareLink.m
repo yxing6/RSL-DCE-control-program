@@ -25,13 +25,7 @@ SamplesPerFrame = 16384;                                            % 4096 in DC
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableTumble = false;                % Enable simulated tumbling of satellite
-freqOffsetHz = 20e3;   % Voluntary offset to avoid the AD9361's DC notch (Hz)
-                       
-
-%%%%%%%%%%% generator must be set to CenterFrequency + freqOffsetHz 
-fprintf("!!! Set the signal generator on %.6f MHz ( %.0f MHz + %.0f kHz) !!!\n", ...
-    (CenterFrequency + freqOffsetHz)/1e6, CenterFrequency/1e6, freqOffsetHz/1e3);
+enableTumble = false;               % Enable simulated tumbling of satellite
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -44,15 +38,14 @@ cleanupAtt = onCleanup(@() clear('att'));
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
 
-%%%%%%%%%%%% to synchronize B210 & signal generator %%%%%%%%%%%%%%%%
+% Synchronize B210 & Signal generator 
 % Verify External 10 MHz Reference Lock Before Proceeding
 disp("Checking external 10 MHz reference lock...");
-pause(1);  % Give the radio a moment to attempt lock after object creation
+pause(1);                                   % Give the radio a moment to attempt lock after object creation
 if ~referenceLockedStatus(SDR_RX)           % SDR_RX & TX share the same clock : 1 test is enough
     error("SDR_RX is not locked to the external 10 MHz reference. Check REF OUT -> REF IN cabling and that the signal generator's reference output is enabled.");
 end
 disp("External reference locked successfully.");
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
@@ -140,10 +133,11 @@ end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
+% channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
-
+% channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -201,13 +195,20 @@ setFixedYLim(ax3, delay_col);
 setFixedYLim(ax4, doppler_col);
 drawnow;
 
+% Reset to Maximum Attenuation
+fprintf("Start of Maximum Attenuation... \n")
+setAttenuation(att, test_channel, 95);
+pause(2.5);
+fprintf("End of Maximum Attenuation. \n")
+
 % Real-time Effect Application Loop
 disp("Beginning playback loop.");
-loopTimer = tic;
 effectIndex = 1;
-last_hardware_db = -1;                                                   
+last_hardware_db = -1;     
+loopTimer = tic;
 
 while (effectIndex <= totalPoints)
+
     % Pull a live RF data frame from the USRP Receiver
     rx_data = SDR_RX();
 
@@ -221,22 +222,22 @@ while (effectIndex <= totalPoints)
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
-    % added freqOffsetHz so subtracting it now to keep the desired center frequency
+    % Subtract freqOffsetHz to Obtain Desired Center Frequency
     [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift - freqOffsetHz, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
+        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
 
     % Update Parameters (slower than the live RF pull)
     if (channelProfile(effectIndex, 1) <= toc(loopTimer))
-
+        
         % Prevent sending negative numbers or out-of-bounds values to hardware
         current_db = max(0, current_db); 
 
         % ADD VALUE FOR RICIAN FADING WHEN ADDED
         fprintf("Time: %.2fs | Total Atten: %.2f dB |Path Loss Atten: %.2f dB | Pointing Loss (Tumbling): %.2f dB | Rician Fading (dB): %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
-            toc(loopTimer), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
+            channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
         if current_db ~= last_hardware_db
@@ -267,6 +268,12 @@ while (effectIndex <= totalPoints)
         effectIndex = effectIndex + 1;
     end
 end
+
+% Reset to Maximum Attenuation
+fprintf("Start of Maximum Attenuation... \n")
+setAttenuation(att, test_channel, 95);
+pause(2.5);
+fprintf("End of Maximum Attenuation. \n")
 
 % Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
 release(SDR_RX);
@@ -300,11 +307,11 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External");
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6);
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...
-    ClockSource="External");
+    ClockSource="External",LocalOscillatorOffset=1e6);
 end
 
 % Flush SDR RX/TX Buffers for Specified Duration
@@ -317,6 +324,7 @@ end
 
 % Apply Channel Impairments Through the SDR
 function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
+
     % Compute and apply Doppler Shift
     t = (0:SamplesPerFrame-1)' / fs;
     phaseShift = 2 * pi * fShift * t;
