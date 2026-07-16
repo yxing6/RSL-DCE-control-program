@@ -18,7 +18,7 @@ ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
 MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
 DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
-fs = 32e6/32;                       % 1 MSPS Sample Rate
+fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
 delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
 SamplesPerFrame = 16384;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
