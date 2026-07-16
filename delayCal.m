@@ -33,14 +33,32 @@ for i = 1:10
     SDR_TX(flush_data);
 end
 
-% Barker 13 coded pulse
-barker13 = [1 1 1 1 1 -1 -1 1 1 -1 1 -1 1];
-samplesPerChip = 20;                                   
-barkerWaveform = repelem(barker13, samplesPerChip).'; 
+% % Barker 13 coded pulse
+% barker13 = [1 1 1 1 1 -1 -1 1 1 -1 1 -1 1];
+% samplesPerChip = 20;                                   
+% barkerWaveform = repelem(barker13, samplesPerChip).'; 
+
+%  m-seqeuence pulse
+p = 7;
+N = 2^p - 1; %127
+state = ones(1,p);%inital state
+seq = ones(1,N);
+for i = 1:N
+    seq(i) = state(end); %output bit
+    % xor feeback on 6th and 7th register
+    feedback = xor(state(6), state(7));
+    % shift register
+    state = [feedback state(1:end-1)];
+end
+%convert from [0,1] to [-1,+1]
+seq = 2*seq - 1;
+%Build cyclic code (3 sequences)
+cyclic_code = repmat(seq, 1, 3);
 
 pulseStart = 100;      
 testPulse = zeros(SamplesPerFrame,1);
-testPulse(pulseStart : pulseStart+numel(barkerWaveform)-1) = barkerWaveform;
+%testPulse(pulseStart : pulseStart+numel(barkerWaveform)-1) = barkerWaveform;
+testPulse(pulseStart : pulseStart+numel(cyclic_code)-1) = cyclic_code;
 
 nTrials = 30;
 measuredDelaySamples = zeros(nTrials,1);
@@ -135,11 +153,11 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6);
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="Internal",LocalOscillatorOffset=1e6);
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...
-    ClockSource="External",LocalOscillatorOffset=1e6);
+    ClockSource="Internal",LocalOscillatorOffset=1e6);
 end
 
 % Flush SDR RX/TX Buffers for Specified Duration
