@@ -129,6 +129,8 @@ xline(measuredDelaySamples(end), 'r--', 'Detected delay');
 title('Correlation magnitude |xcorr(rx\_data, testPulse)|');
 xlabel('Lag (samples)'); ylabel('|c|'); grid on;
 
+%% test
+fprintf('Trial %d: delay=%d, delay mod frame=%d\n', k, measuredDelaySamples(k), mod(measuredDelaySamples(k), SamplesPerFrame));
 
 %% --- Log CSV of calibration ---
 calibTable = table( ...
