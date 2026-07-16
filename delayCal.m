@@ -65,6 +65,31 @@ delayStd_samples = std(measuredDelaySamples);
 fprintf('Measured physical delay (via the actual hardware chain) : %.1f samples (%.3f ms), standard deviation = %.1f samples\n', ...
     delaySDR_measured_samples, delaySDR_measured_seconds*1e3, delayStd_samples);
 
+%%
+% Plot TX pulse, RX capture, and correlation (from the last trial)
+figure('Name','RX/TX Loopback Check');
+ 
+subplot(3,1,1);
+plot(real(testPulse));
+title('TX waveform (Barker-13 pulse, real part)');
+xlabel('Sample'); ylabel('Amplitude'); grid on;
+xlim([pulseStart-50, pulseStart+numel(barkerWaveform)+50]);
+ 
+subplot(3,1,2);
+plot(real(rx_data)); hold on;
+plot(imag(rx_data));
+legend('Real','Imag');
+title('RX capture (last trial, full frame)');
+xlabel('Sample'); ylabel('Amplitude'); grid on;
+ 
+subplot(3,1,3);
+plot(lags, abs(c));
+hold on;
+xline(measuredDelaySamples(end), 'r--', 'Detected delay');
+title('Correlation magnitude |xcorr(rx\_data, testPulse)|');
+xlabel('Lag (samples)'); ylabel('|c|'); grid on;
+
+
 %% --- Log CSV of calibration ---
 calibTable = table( ...
     datetime('now'), string(Platform), string(SerialNum), CenterFrequency, fs, ...
