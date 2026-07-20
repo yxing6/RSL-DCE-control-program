@@ -16,18 +16,16 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
-% fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate           %%%%%%%%%%
-fs = 550000;
+MasterClockRate = 32e6;                                             
+DecimationFactor = 32; InterpolationFactor = DecimationFactor;
+fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-% delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation         %%%%%%%%%%
+delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
 %%%%%%%%%%
-bufferSize = 570000;                    % Fixed total capacity of our ring buffer
 circBuffer   = zeros(bufferSize, 1);    % The static memory array
 writePointer = 1;                       % Tracks where incoming RX data gets written
 %%%%%%%%%%
-SamplesPerFrame = 16384;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
+SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
@@ -119,11 +117,9 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 
 % Extract Attenuation From Column E (Column 5)
 channelProfile(:,2) = csv_table{:, 5};
-%%%%%%%%%%
-t=15
-channelProfile(1:t,2) = 150
-channelProfile(t:end,2) = 130
-%%%%%%%%%%
+t=15;                                                                   % Enable for Circular Buffer Delay Testing
+channelProfile(1:t,2) = 150;                                            % Enable for Circular Buffer Delay Testing
+channelProfile(t:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
@@ -145,17 +141,13 @@ end
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
 % channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
-%%%%%%%%%%
-channelProfile(:,3) = 0.7*ones(size(csv_table{:, 6}));                                      
-%%%%%%%%%%
+channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable for Circular Buffer Delay Testing                   
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
-%%%%%%%%%%
-channelProfile(1:t,4) = 7000
-channelProfile(t:end,4) = -7000
-%%%%%%%%%%
+channelProfile(1:t,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
+channelProfile(t:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -240,7 +232,6 @@ while (effectIndex <= totalPoints)
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
-    % Subtract freqOffsetHz to Obtain Desired Center Frequency
     % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
     
@@ -345,7 +336,31 @@ function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
     end
 end
 
-% % Apply Channel Impairments Through the SDR               %%%%%%%%%%
+%%%%%%%%%%
+% Apply Channel Impairments Through SDR
+function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
+    rx_data, fShift, phaseOffset, delay, circBuffer, writePointer, SamplesPerFrame, fs)
+    
+    % Compute and apply Doppler Shift to incoming data
+    t = (0:SamplesPerFrame-1)' / fs;
+    phaseShift = 2 * pi * fShift * t;
+    mod_data = rx_data .* exp(1j * (phaseShift + phaseOffset));
+    phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
+    
+    % Apply Delay Through Circularly Shifted Buffer
+    writeIndices = mod((writePointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;         % Determine the block of indices where new data will be written
+    circBuffer(writeIndices) = mod_data;                                                            % Writes new data                                                           
+    delaySamples = max(round(delay * fs), 0);                                                       % Calculate how many samples back the read pointer needs to be
+    assert(delaySamples < length(circBuffer), ...                                                   % Prevents invalid delay inputs
+        'Requested delay exceeds circular buffer length.');
+    readPointer = mod((writePointer - 1) - delaySamples, length(circBuffer)) + 1;                   % Calculate the Read Pointer position relative to where new data was just written (step backward by delaySamples)
+    readIndices = mod((readPointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;           % Determine the block of indices where delayed data will be read
+    tx_data = circBuffer(readIndices);                                                              % Transmits read data
+    writePointer = mod((writePointer - 1) + SamplesPerFrame, length(circBuffer)) + 1;               % Advance the write pointer forward for the next frame's turn
+end
+%%%%%%%%%%
+
+% % Apply Channel Impairments Through the SDR               %%%%%%%%%% Original Time Delay Implementation
 % function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
 % 
 %     % Compute and apply Doppler Shift
@@ -360,37 +375,6 @@ end
 %     tx_data = delayBuffer(1:SamplesPerFrame);
 %     delayBuffer = [delayBuffer(SamplesPerFrame + 1 : end); zeros(SamplesPerFrame, 1)];
 % end
-
-%%%%%%%%%%
-% Apply Channel Impairments Using a High-Efficiency Circular Ring Buffer
-function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
-    rx_data, fShift, phaseOffset, delay, circBuffer, writePointer, SamplesPerFrame, fs)
-    
-    % 1. Compute and apply Doppler Shift to incoming data
-    t = (0:SamplesPerFrame-1)' / fs;
-    phaseShift = 2 * pi * fShift * t;
-    mod_data = rx_data .* exp(1j * (phaseShift + phaseOffset));
-    phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
-    
-    % 2. Calculate how many samples back the read pointer needs to be
-    delaySamples = max(round(delay * fs), 1);
-    
-    % 3. Determine the block of indices where we will WRITE the new data
-    writeIndices = mod((writePointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;
-    circBuffer(writeIndices) = mod_data;
-    
-    % 4. Calculate the Read Pointer position relative to where we just wrote
-    % (We step backward in time by delaySamples)
-    readPointer = mod((writePointer - 1) - delaySamples, length(circBuffer)) + 1;
-    
-    % 5. Determine the block of indices where we will READ the delayed data
-    readIndices = mod((readPointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;
-    tx_data = circBuffer(readIndices);
-    
-    % 6. Advance the write pointer forward for the next frame's turn
-    writePointer = mod((writePointer - 1) + SamplesPerFrame, length(circBuffer)) + 1;
-end
-%%%%%%%%%%
 
 % Set Y-axis of a Subplot Based on the min/max of the Pass Data
     % with a small margin for readability (5% of the range, minimum 1 unit)
