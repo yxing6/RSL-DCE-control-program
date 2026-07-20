@@ -16,16 +16,17 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
+MasterClockRate = 56e6;                                             
+DecimationFactor = 56; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-%delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
+% delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation           %%%%%%%%%%
+%%%%%%%%%%
 maxDelay_s = 12e-3;                 % Margin above the expected maximum LEO delay (~8.3 ms + margin)
 vfd = dsp.VariableFractionalDelay('InterpolationMethod', 'Farrow', ...
     'MaximumDelay', ceil(maxDelay_s * fs));               % Farrow interpolation: rebuild signal 'between 2 samples'
-
-SamplesPerFrame = 16384;                                   % 4096 in DCETest But Increased to 16384 For Anti-jitter
+%%%%%%%%%%
+SamplesPerFrame = 4096;                                  
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
@@ -41,7 +42,9 @@ disp("Initializing USRP SDR Hardware...");
 cleanupAtt = onCleanup(@() clear('att')); 
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
+%%%%%%%%%%
 cleanupVFD = onCleanup(@() release(vfd));
+%%%%%%%%%%
 
 % Synchronize B210 & Signal generator 
 % Verify External 10 MHz Reference Lock Before Proceeding
@@ -118,6 +121,9 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 
 % Extract Attenuation From Column E (Column 5)
 channelProfile(:,2) = csv_table{:, 5};
+t=15;                                                                   % Enable for Circular Buffer Delay Testing
+channelProfile(1:t,2) = 150;                                            % Enable for Circular Buffer Delay Testing
+channelProfile(t:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
@@ -139,10 +145,13 @@ end
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
 % channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
+channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable for Circular Buffer Delay Testing                   
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
+channelProfile(1:t,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
+channelProfile(t:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -211,9 +220,6 @@ disp("Beginning playback loop.");
 effectIndex = 1;
 last_hardware_db = -1;     
 loopTimer = tic;
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fprintf("CSV delay = %.3f ms | Applied delay = %.3f ms\n", ...
-    current_delay*1e3, calibrated_delay*1e3);
 
 while (effectIndex <= totalPoints)
 
@@ -224,18 +230,22 @@ while (effectIndex <= totalPoints)
     current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
     current_pathloss  = pathloss_att(effectIndex);
     current_tumbleatt = tumble_att_dB(effectIndex);
-    %current_delay     = channelProfile(effectIndex, 3);
-    %%% Farrow interpolation for delay
+    % current_delay     = channelProfile(effectIndex, 3);           %%%%%%%%%%
+    %%%%%%%%%%
+    % Farrow Interpolation for VFD 
     current_delay = interp1(channelProfile(:,1), channelProfile(:,3), toc(loopTimer), 'linear', 'extrap');
     current_fShift    = channelProfile(effectIndex, 4);
+    %%%%%%%%%%
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
-    calibrated_delay = max(current_delay - delaySDR, 0);       %% delay applied !
-    % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
+    calibrated_delay = max(current_delay - delaySDR, 0);       
+    % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
+    %%%%%%%%%%
     [phaseOffset, tx_data] = applyDigitalImpairments(...
         rx_data, current_fShift, phaseOffset, calibrated_delay, vfd, SamplesPerFrame, fs);
+    %%%%%%%%%%
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
@@ -343,7 +353,7 @@ function [phaseOffset, tx_data] = applyDigitalImpairments(data, fShift, phaseOff
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
 
     % Apply Delay via Variable Fractional Delay (sub-sample resolution)
-    delaySamples = delay * fs;          % delay in samples
+    delaySamples = delay * fs;                  % delay in samples
     tx_data = vfd(mod_data, delaySamples);      % returns the same signal tx_data but with a delay
 end
 

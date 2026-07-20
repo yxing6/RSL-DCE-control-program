@@ -234,7 +234,6 @@ while (effectIndex <= totalPoints)
     calibrated_delay = max(current_delay - delaySDR, 0);
     % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
-    
     %%%%%%%%%% 
     [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
         rx_data, current_fShift, phaseOffset, calibrated_delay, circBuffer, writePointer, SamplesPerFrame, fs);
@@ -359,22 +358,6 @@ function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairme
     writePointer = mod((writePointer - 1) + SamplesPerFrame, length(circBuffer)) + 1;               % Advance the write pointer forward for the next frame's turn
 end
 %%%%%%%%%%
-
-% % Apply Channel Impairments Through the SDR               %%%%%%%%%% Original Time Delay Implementation
-% function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
-% 
-%     % Compute and apply Doppler Shift
-%     t = (0:SamplesPerFrame-1)' / fs;
-%     phaseShift = 2 * pi * fShift * t;
-%     mod_data = data .* exp(1j * (phaseShift + phaseOffset));
-%     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
-% 
-%     % Apply Delay Through Circularly Shifted Buffer             
-%     idx_shift = max(round(delay * fs), 1);
-%     delayBuffer(idx_shift : idx_shift + SamplesPerFrame - 1) = mod_data;
-%     tx_data = delayBuffer(1:SamplesPerFrame);
-%     delayBuffer = [delayBuffer(SamplesPerFrame + 1 : end); zeros(SamplesPerFrame, 1)];
-% end
 
 % Set Y-axis of a Subplot Based on the min/max of the Pass Data
     % with a small margin for readability (5% of the range, minimum 1 unit)
