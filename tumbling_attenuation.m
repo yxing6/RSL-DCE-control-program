@@ -91,14 +91,6 @@ switch lower(options.TestCase)
 
         omega0 = deg2rad([0.2; 0.1; 0.4]);
 
-    case "desynchronization" % NOT SURE HOW TO EFFECTIVELY MODEL THIS
-        % Loss of attitude lock following nominal pointing
-        roll0  = deg2rad(20);
-        pitch0 = deg2rad(-15);
-        yaw0   = deg2rad(30);
-
-        omega0 = deg2rad([2; 1; 0.5]);
-
     case "deployment"
         % Typical post-deployment tumble
         roll0  = deg2rad(360*rand);
