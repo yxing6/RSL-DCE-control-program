@@ -16,17 +16,16 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 56e6;                                             
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;
+MasterClockRate = 32e6;                                             
+DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-% delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation           %%%%%%%%%%
+delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
 %%%%%%%%%%
-maxDelay_s = 12e-3;                 % Margin above the expected maximum LEO delay (~8.3 ms + margin)
-vfd = dsp.VariableFractionalDelay('InterpolationMethod', 'Farrow', ...
-    'MaximumDelay', ceil(maxDelay_s * fs));               % Farrow interpolation: rebuild signal 'between 2 samples'
+circBuffer   = zeros(bufferSize, 1);    % The static memory array
+writePointer = 1;                       % Tracks where incoming RX data gets written
 %%%%%%%%%%
-SamplesPerFrame = 4096;                                  
+SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
@@ -42,9 +41,6 @@ disp("Initializing USRP SDR Hardware...");
 cleanupAtt = onCleanup(@() clear('att')); 
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
-%%%%%%%%%%
-cleanupVFD = onCleanup(@() release(vfd));
-%%%%%%%%%%
 
 % Synchronize B210 & Signal generator 
 % Verify External 10 MHz Reference Lock Before Proceeding
@@ -230,21 +226,17 @@ while (effectIndex <= totalPoints)
     current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
     current_pathloss  = pathloss_att(effectIndex);
     current_tumbleatt = tumble_att_dB(effectIndex);
-    % current_delay     = channelProfile(effectIndex, 3);           %%%%%%%%%%
-    %%%%%%%%%%
-    % Farrow Interpolation for VFD 
-    current_delay = interp1(channelProfile(:,1), channelProfile(:,3), toc(loopTimer), 'linear', 'extrap');
+    current_delay     = channelProfile(effectIndex, 3);
     current_fShift    = channelProfile(effectIndex, 4);
-    %%%%%%%%%%
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
-    calibrated_delay = max(current_delay - delaySDR, 0);       
+    calibrated_delay = max(current_delay - delaySDR, 0);
     % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
-    %%%%%%%%%%
-    [phaseOffset, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, vfd, SamplesPerFrame, fs);
+    %%%%%%%%%% 
+    [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
+        rx_data, current_fShift, phaseOffset, calibrated_delay, circBuffer, writePointer, SamplesPerFrame, fs);
     %%%%%%%%%%
 
     % Transmit the modified waveform out of the USRP Transmitter
@@ -343,19 +335,29 @@ function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
     end
 end
 
-% Apply Channel Impairments Through the SDR
-function [phaseOffset, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, vfd, SamplesPerFrame, fs)
-
-    % Compute and apply Doppler Shift 
+%%%%%%%%%%
+% Apply Channel Impairments Through SDR
+function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
+    rx_data, fShift, phaseOffset, delay, circBuffer, writePointer, SamplesPerFrame, fs)
+    
+    % Compute and apply Doppler Shift to incoming data
     t = (0:SamplesPerFrame-1)' / fs;
     phaseShift = 2 * pi * fShift * t;
-    mod_data = data .* exp(1j * (phaseShift + phaseOffset));
+    mod_data = rx_data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
-
-    % Apply Delay via Variable Fractional Delay (sub-sample resolution)
-    delaySamples = delay * fs;                  % delay in samples
-    tx_data = vfd(mod_data, delaySamples);      % returns the same signal tx_data but with a delay
+    
+    % Apply Delay Through Circularly Shifted Buffer
+    writeIndices = mod((writePointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;         % Determine the block of indices where new data will be written
+    circBuffer(writeIndices) = mod_data;                                                            % Writes new data                                                           
+    delaySamples = max(round(delay * fs), 0);                                                       % Calculate how many samples back the read pointer needs to be
+    assert(delaySamples < length(circBuffer), ...                                                   % Prevents invalid delay inputs
+        'Requested delay exceeds circular buffer length.');
+    readPointer = mod((writePointer - 1) - delaySamples, length(circBuffer)) + 1;                   % Calculate the Read Pointer position relative to where new data was just written (step backward by delaySamples)
+    readIndices = mod((readPointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;           % Determine the block of indices where delayed data will be read
+    tx_data = circBuffer(readIndices);                                                              % Transmits read data
+    writePointer = mod((writePointer - 1) + SamplesPerFrame, length(circBuffer)) + 1;               % Advance the write pointer forward for the next frame's turn
 end
+%%%%%%%%%%
 
 % Set Y-axis of a Subplot Based on the min/max of the Pass Data
     % with a small margin for readability (5% of the range, minimum 1 unit)

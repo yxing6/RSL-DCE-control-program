@@ -1,4 +1,4 @@
-function [pointing_loss_dB, components] = tumbling_attenuation(t, freq, options)
+function [components] = tumbling_attenuation(t, freq, options)
 % TUMBLING_ATTENUATION Simulate antenna pointing loss due to CubeSat tumbling.
 %
 % This function simulates the attitude dynamics of a tumbling CubeSat and
@@ -14,10 +14,8 @@ function [pointing_loss_dB, components] = tumbling_attenuation(t, freq, options)
 %
 % NAME-VALUE ARGUMENTS (optional, defaults shown in the arguments block):
 %   SatName             Display name of the satellite.
-%   x_dim               Satellite x-dimension (m).
-%   y_dim               Satellite y-dimension (m).
-%   z_dim               Satellite z-dimension (m).
-%   mass                Satellite mass (kg).
+%   SatDimensions       Satellite dimensions (m).
+%   Mass                Satellite mass (kg).
 %   AntennaType         Antenna radiation pattern model. Supported options:
 %                         - "Half-Wave Dipole"
 %                         - "Quarter-Wave Monopole"
@@ -31,7 +29,6 @@ function [pointing_loss_dB, components] = tumbling_attenuation(t, freq, options)
 %   TestCase            Test Cases. Supported options:
 %                         - "stable"
 %                         - "drift"
-%                         - "desynchronization"
 %                         - "deployment"
 %                         - "end-over-end"
 %                         - "extreme"
@@ -52,13 +49,15 @@ arguments
     t                              (:,1) double                     % s
     freq                           (1,1) double                     % Hz
     options.SatName                (1,1) string  = "CANX-2"
-    options.x_dim                  (1,1) double  = 0.1              % m
-    options.y_dim                  (1,1) double  = 0.1              % m
-    options.z_dim                  (1,1) double  = 0.3              % m
-    options.mass                   (1,1) double  = 4                % kg
-    options.AntennaType            (1,1) string  = "Half-Wave Dipole" 
-    options.DishRadius             (1,1) double = 1;                % m
+    options.SatDimensions          (1,3) double  = [0.1, 0.1, 0.3]  % m
+    options.Mass                   (1,1) double  = 4                % kg
+
+    options.AntennaType            (1,1) string  = "Half-Wave Dipole"
+    options.AntennaOrientation     (1,1) string  = "+X"
+
+    options.DishRadius             (1,1) double = 0.05;             % m
     options.AttenuationCapDB       (1,1) double  = 60               % dB
+
     options.ShowPlots              (1,1) logical = true
     options.ShowAnimation          (1,1) logical = false
     options.PlaybackSpeed          (1,1) double  = 5                % animation speed, x real-time
@@ -91,14 +90,6 @@ switch lower(options.TestCase)
 
         omega0 = deg2rad([0.2; 0.1; 0.4]);
 
-    case "desynchronization" % NOT SURE HOW TO EFFECTIVELY MODEL THIS
-        % Loss of attitude lock following nominal pointing
-        roll0  = deg2rad(20);
-        pitch0 = deg2rad(-15);
-        yaw0   = deg2rad(30);
-
-        omega0 = deg2rad([2; 1; 0.5]);
-
     case "deployment"
         % Typical post-deployment tumble
         roll0  = deg2rad(360*rand);
@@ -128,9 +119,19 @@ switch lower(options.TestCase)
         omega0 = deg2rad(180) * omega_axis;
 
     otherwise
-        error('Unknown tumble scenario: %s', options.TumbleSeverity);
+        error('Unknown tumble scenario: %s', options.TestCase);
 
 end
+
+
+fprintf("\n--- CubeSat Tumbling Simulation ---\n")
+fprintf("Satellite: %s\n", options.SatName)
+fprintf("Scenario: %s\n", options.TestCase)
+fprintf("Antenna: %s (%s mount)\n",...
+    options.AntennaType,...
+    options.AntennaOrientation)
+fprintf("Frequency: %.2f MHz\n",freq/1e6)
+fprintf("----------------------------------\n\n")
 
 % Initial pointing error as a quatrion
 q0 = euler2quat(roll0,pitch0,yaw0);
@@ -138,10 +139,10 @@ q0 = euler2quat(roll0,pitch0,yaw0);
 % Initial state
 state0 = [omega0; q0];
 
-m=options.mass;
-a=options.x_dim;
-b=options.y_dim;
-c=options.z_dim;
+m=options.Mass;
+a=options.SatDimensions(1);
+b=options.SatDimensions(2);
+c=options.SatDimensions(3);
 
 % Calculate principal moments of inertia
 Jx = (1/12)*m*(b^2+c^2); % roll axis, kg*m^2
@@ -166,7 +167,7 @@ for k = 1:size(q,1)
 end
 
 % Antenna and Ground Station Geometry (for pointing loss)
-antenna_body = [0;0;-1];
+antenna_body = get_antenna_orientation(options.AntennaOrientation);
 ground_station_inertial = [0;0;-1]; 
 
 num_steps = length(t);
@@ -187,22 +188,15 @@ for k = 1:num_steps
     %patterns for patch, helical etc. antennas
     switch lower(options.AntennaType)
         case "half-wave dipole"
-            theta_eff = pi/2 - theta;
-            theta_eff = max(theta_eff,1e-12); %remove singularities
-            gain = (cos(pi/2*cos(theta_eff))/sin(theta_eff))^2;
+            gain = (cos(pi/2*cos(theta))/sin(theta))^2;
             gain = max(gain, 10^(-options.AttenuationCapDB/10));
-            pointing_loss_dB(k) = -10*log10(gain);
-    
+            pointing_loss_dB(k) = -10*log10(gain);    
         case "quarter-wave monopole"
-            theta_eff = pi/2 - theta;
-            theta_eff = max(theta_eff,1e-12); %remove singularities
-            gain = (cos(pi/2*cos(theta_eff))/sin(theta_eff))^2;
+            gain = (cos(pi/2*cos(theta))/sin(theta))^2;
             gain = max(gain, 10^(-options.AttenuationCapDB/10));
-            pointing_loss_dB(k) = -10*log10(gain);
-    
+            pointing_loss_dB(k) = -10*log10(gain);    
         case "dish"
-            theta_eff=theta; %mounted boresight
-            u = k0*options.r*sin(theta_eff);
+            u = k0*r*sin(theta);
             if abs(u) < 1e-10
                 E = 1;
             else
@@ -215,11 +209,97 @@ for k = 1:num_steps
 
 end
 
+%%
+%% Plot Antenna Pattern
+
+theta_plot = linspace(0,pi,100);
+phi_plot   = linspace(0,2*pi,100);
+
+[theta_plot,phi_plot] = meshgrid(theta_plot,phi_plot);
+
+
+% Radiation pattern (antenna coordinate system, boresight = +Z)
+
+switch lower(options.AntennaType)
+
+    case "half-wave dipole"
+        gain_plot = (cos(pi/2*cos(theta_plot))./sin(theta_plot)).^2;
+
+    case "quarter-wave monopole"
+        gain_plot = (cos(pi/2*cos(theta_plot))./sin(theta_plot)).^2;
+
+    case "dish"
+        u = k0*r*sin(theta_plot);
+
+        gain_plot = ones(size(u));
+        idx = abs(u)>1e-10;
+
+        gain_plot(idx) = ...
+            (2*besselj(1,u(idx))./u(idx)).^2;
+end
+
+
+gain_plot(~isfinite(gain_plot)) = 0;
+gain_plot = gain_plot/max(gain_plot(:));
+
+
+% Convert gain to radius
+rho = sqrt(gain_plot);
+
+X = rho.*sin(theta_plot).*cos(phi_plot);
+Y = rho.*sin(theta_plot).*sin(phi_plot);
+Z = rho.*cos(theta_plot);
+
+
+
+% Rotate +Z antenna axis to actual mounting direction
+
+z_axis = [0;0;1];
+v = cross(z_axis,antenna_body);
+s = norm(v);
+c = dot(z_axis,antenna_body);
+
+
+if s > 1e-10
+    vx = [ 0 -v(3) v(2);
+           v(3) 0 -v(1);
+          -v(2) v(1) 0];
+
+    R_ant = eye(3)+vx+vx^2*((1-c)/s^2);
+else
+    R_ant = eye(3);
+end
+
+
+P = R_ant*[X(:)';Y(:)';Z(:)'];
+
+X = reshape(P(1,:),size(X));
+Y = reshape(P(2,:),size(Y));
+Z = reshape(P(3,:),size(Z));
+
+
+figure
+surf(X,Y,Z,gain_plot,'EdgeColor','none')
+
+axis equal
+grid on
+xlabel("X")
+ylabel("Y")
+zlabel("Z")
+
+title(sprintf("%s (%s mount)",...
+    options.AntennaType,...
+    options.AntennaOrientation))
+
+colorbar
+view(45,30)
+%%
+
 components = struct( ...
-    'TumbleType', options.TumbleSeverity, ...
+    'TestCase', options.TestCase, ...
     'MomentOfInertia', J, ...
-    'InitialPointingError_rad', q0, ...
-    'InitialAngularVelocity_rad_s', omega0, ...
+    'InitialPointingError_rad', [roll0, pitch0, yaw0], ...
+    'InitialAngularVelocity_rad_s', omega0', ...
     'off_axis_angle_deg', off_axis_angle_deg, ...
     'pointing_loss_dB', pointing_loss_dB);
 
@@ -403,4 +483,23 @@ q3 = cr*cp*sy - sr*sp*cy;
 
 q = [q0;q1;q2;q3];
 q = q/norm(q);
+end
+
+function antenna_body = get_antenna_orientation(orientation)
+    switch upper(orientation)
+        case "+X"
+            antenna_body = [1;0;0];
+        case "-X"
+            antenna_body = [-1;0;0];
+        case "+Y"
+            antenna_body = [0;1;0];
+        case "-Y"
+            antenna_body = [0;-1;0];
+        case "+Z"
+            antenna_body = [0;0;1];
+        case "-Z"
+            antenna_body = [0;0;-1];
+        otherwise
+            error("Unknown antenna orientation")
+    end
 end
