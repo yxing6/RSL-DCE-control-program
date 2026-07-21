@@ -27,7 +27,7 @@ vfd = dsp.VariableFractionalDelay('InterpolationMethod', 'Farrow', ...
     'MaximumDelay', ceil(maxDelay_s * fs));               % Farrow interpolation: rebuild signal 'between 2 samples'
 %%%%%%%%%%
 SamplesPerFrame = 4096;                                  
-delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
+% delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;               % Enable simulated tumbling of satellite
@@ -123,7 +123,7 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 channelProfile(:,2) = csv_table{:, 5};
 t=15;                                                                   % Enable for Circular Buffer Delay Testing
 channelProfile(1:t,2) = 150;                                            % Enable for Circular Buffer Delay Testing
-channelProfile(t:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
+channelProfile(t+1:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
@@ -151,7 +151,7 @@ channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
 channelProfile(1:t,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
-channelProfile(t:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
+channelProfile(t+1:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -238,13 +238,13 @@ while (effectIndex <= totalPoints)
     %%%%%%%%%%
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
-    % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
-    calibrated_delay = max(current_delay - delaySDR, 0);       
+    % % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
+    % calibrated_delay = max(current_delay - delaySDR, 0);       
     % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
     %%%%%%%%%%
     [phaseOffset, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, vfd, SamplesPerFrame, fs);
+        rx_data, current_fShift, phaseOffset, current_delay, vfd, SamplesPerFrame, fs);
     %%%%%%%%%%
 
     % Transmit the modified waveform out of the USRP Transmitter

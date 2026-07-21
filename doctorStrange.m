@@ -20,13 +20,13 @@ MasterClockRate = 32e6;
 DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
+% delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation       %%%%%%%%%%
 %%%%%%%%%%
-circBuffer   = zeros(bufferSize, 1);    % The static memory array
+circBuffer   = zeros(256e3, 1);    % Memory array for time-delay emulation
 writePointer = 1;                       % Tracks where incoming RX data gets written
 %%%%%%%%%%
 SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
-delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
+% delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;               % Enable simulated tumbling of satellite
@@ -119,7 +119,7 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 channelProfile(:,2) = csv_table{:, 5};
 t=15;                                                                   % Enable for Circular Buffer Delay Testing
 channelProfile(1:t,2) = 150;                                            % Enable for Circular Buffer Delay Testing
-channelProfile(t:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
+channelProfile(t+1:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
@@ -147,7 +147,7 @@ channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
 channelProfile(1:t,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
-channelProfile(t:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
+channelProfile(t+1:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -218,7 +218,7 @@ last_hardware_db = -1;
 loopTimer = tic;
 
 while (effectIndex <= totalPoints)
-
+    
     % Pull a live RF data frame from the USRP Receiver
     rx_data = SDR_RX();
 
@@ -230,13 +230,13 @@ while (effectIndex <= totalPoints)
     current_fShift    = channelProfile(effectIndex, 4);
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
-    % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
-    calibrated_delay = max(current_delay - delaySDR, 0);
+    % % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
+    % calibrated_delay = max(current_delay - delaySDR, 0);
     % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
     %%%%%%%%%% 
     [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
-        rx_data, current_fShift, phaseOffset, calibrated_delay, circBuffer, writePointer, SamplesPerFrame, fs);
+        rx_data, current_fShift, phaseOffset, current_delay, circBuffer, writePointer, SamplesPerFrame, fs);
     %%%%%%%%%%
 
     % Transmit the modified waveform out of the USRP Transmitter
