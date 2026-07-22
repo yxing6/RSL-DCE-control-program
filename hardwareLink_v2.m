@@ -16,8 +16,8 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 56e6;                                             
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;
+MasterClockRate = 32e6;                                             
+DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
 % delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation           %%%%%%%%%%
@@ -121,8 +121,10 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 
 % Extract Attenuation From Column E (Column 5)
 channelProfile(:,2) = csv_table{:, 5};
-t=15;                                                                   % Enable for Circular Buffer Delay Testing
-channelProfile(1:t,2) = 150;                                            % Enable for Circular Buffer Delay Testing
+x=7;                                                                      % Enable for Circular Buffer Delay Testing
+t=15;                                                                     % Enable for Circular Buffer Delay Testing
+channelProfile(1:x,2) = 150;                                              % Enable for Circular Buffer Delay Testing
+channelProfile(x+1:t,2) = 140;                                            % Enable for Circular Buffer Delay Testing
 channelProfile(t+1:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
 
 % Generate Path Loss Attenuation Vector
@@ -135,7 +137,7 @@ channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 % Generate CANX-2 Tumbling Attenuation Profile
 if enableTumble
     [tumble_att_dB] = tumbling_attenuation( ...
-        channelProfile(:,1), CenterFrequency,...
+        channelProfile(:,1), ...
         ShowPlots=false, ...
         ShowAnimation=false);
     % Add Attenuation from Tumbling
@@ -145,13 +147,16 @@ end
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
 % channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
-channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable for Circular Buffer Delay Testing                   
+% channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable for Circular Buffer Delay Testing                   
+channelProfile(1:9,3) = 0;                                           % Enable for Circular Buffer Delay Testing           
+channelProfile(10:end,3) = 0.1;                                            % Enable for Circular Buffer Delay Testing
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
-channelProfile(1:t,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
-channelProfile(t+1:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
+channelProfile(1:x,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
+channelProfile(x+1:t,4) = 0;                                            % Enable for Circular Buffer Delay Testing
+channelProfile(t+1:end,4) = -7000;                                      % Enable for Circular Buffer Delay Testing  
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
