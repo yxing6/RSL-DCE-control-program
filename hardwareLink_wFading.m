@@ -25,7 +25,29 @@ SamplesPerFrame = 16384;                                            % 4096 in DC
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
+enableFading = true;
 enableTumble = false;               % Enable simulated tumbling of satellite
+
+% Configure Fading Parameters
+
+if enableFading
+    K = 10; % Default 10, typical for SatCom
+    fadeRate = 5; % Slow-varying fading
+else
+    K = 1e6; % negligible fade
+    fadeRate = 0;
+end
+
+ricianChan = comm.RicianChannel( ...
+    'SampleRate', fs, ...
+    'KFactor', K, ...
+    'MaximumDopplerShift', fadeRate, ...
+    'PathDelays', 0, ...
+    'AveragePathGains', 0, ...
+    'DirectPathDopplerShift', 0, ...
+    'DirectPathInitialPhase', 0, ...
+    'FadingTechnique', 'Filtered Gaussian noise', ...
+    'PathGainsOutputPort', true);
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -223,8 +245,8 @@ while (effectIndex <= totalPoints)
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
     % Subtract freqOffsetHz to Obtain Desired Center Frequency
-    [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
+    [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(...
+        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs, ricianChan);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
@@ -237,7 +259,7 @@ while (effectIndex <= totalPoints)
 
         % ADD VALUE FOR RICIAN FADING WHEN ADDED
         fprintf("Time: %.2fs | Total Atten: %.2f dB |Path Loss Atten: %.2f dB | Pointing Loss (Tumbling): %.2f dB | Rician Fading (dB): %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
-            channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
+            channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, fade_dB, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
         if current_db ~= last_hardware_db
@@ -323,13 +345,17 @@ function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
 end
 
 % Apply Channel Impairments Through the SDR
-function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
+function [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs, ricianChan)
 
     % Compute and apply Doppler Shift
     t = (0:SamplesPerFrame-1)' / fs;
     phaseShift = 2 * pi * fShift * t;
     mod_data = data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
+
+    % Apply Rician Fading and take RMS value for frame for printing
+    [mod_data, pathGains] = ricianChan(mod_data);
+    fade_dB = 20*log10(rms(abs(pathGains)));
 
     % Apply Delay Through Circularly Shifted Buffer               
     idx_shift = max(round(delay * fs), 1);
