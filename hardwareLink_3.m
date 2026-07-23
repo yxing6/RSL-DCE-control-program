@@ -11,7 +11,7 @@ if ~exist('showDelayPlot',    'var'), showDelayPlot    = true; end
 if ~exist('showDopplerPlot',  'var'), showDopplerPlot  = true; end
 if ~exist('enableTumbleToggle','var'), enableTumbleToggle = false; end
 
-% Tumbling sub-parameters (set by passLinkGUI.m; defaults match tumbling_attenuation_v2.m)
+% Tumbling sub-parameters (set by passLinkGUI.m; defaults match tumbling_attenuation.m)
 if ~exist('tumbleTestCase',           'var'), tumbleTestCase           = "stable"; end
 if ~exist('tumbleSatDimensions',      'var'), tumbleSatDimensions      = [0.1 0.1 0.3]; end
 if ~exist('tumbleMass',               'var'), tumbleMass               = 4; end
@@ -194,7 +194,7 @@ channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);   % default: no tumbling, needed later whether or not enableTumble is true
 if enableTumble
-    tumbleComponents = tumbling_attenuation_v2( ...
+    tumbleComponents = tumbling_attenuation( ...
         channelProfile(:,1), CenterFrequency, ...
         TestCase=tumbleTestCase, ...
         SatDimensions=tumbleSatDimensions, ...
