@@ -160,7 +160,7 @@ function passLinkGUI
     tp.ColumnWidth = {150, '1x'};
     tp.RowSpacing  = 4;
 
-    uilabel(tp, 'Text', 'Tumble Type:');
+    uilabel(tp, 'Text', 'Test Case:');
     testCaseDropdown = uidropdown(tp, ...
         'Items', {'stable', 'drift', 'deployment', 'end-over-end', 'extreme'}, ...
         'Value', 'stable');

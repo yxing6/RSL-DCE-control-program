@@ -16,17 +16,13 @@ Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 32e6;                                             
-DecimationFactor = 32; InterpolationFactor = DecimationFactor;
+MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
+DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-% delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation       %%%%%%%%%%
-%%%%%%%%%%
-circBuffer   = zeros(256e3, 1);    % Memory array for time-delay emulation
-writePointer = 1;                       % Tracks where incoming RX data gets written
-%%%%%%%%%%
-SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
-% delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
+delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
+SamplesPerFrame = 16384;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
+delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableTumble = false;               % Enable simulated tumbling of satellite
@@ -117,9 +113,6 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 
 % Extract Attenuation From Column E (Column 5)
 channelProfile(:,2) = csv_table{:, 5};
-t=15;                                                                   % Enable for Circular Buffer Delay Testing
-channelProfile(1:t,2) = 150;                                            % Enable for Circular Buffer Delay Testing
-channelProfile(t+1:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
@@ -131,7 +124,7 @@ channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 % Generate CANX-2 Tumbling Attenuation Profile
 if enableTumble
     [tumble_att_dB] = tumbling_attenuation( ...
-        channelProfile(:,1), CenterFrequency, ...
+        channelProfile(:,1), CenterFrequency,...
         ShowPlots=false, ...
         ShowAnimation=false);
     % Add Attenuation from Tumbling
@@ -141,13 +134,10 @@ end
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
 % channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
-channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable for Circular Buffer Delay Testing                   
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
-channelProfile(1:t,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
-channelProfile(t+1:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -219,64 +209,64 @@ loopTimer = tic;
 
 while (effectIndex <= totalPoints)
 
-    % Wait until the scheduled profile time
-    while channelProfile(effectIndex,1) > toc(loopTimer)
-        % Do nothing
-    end
-
-    % Pull a fresh RF frame
+    % Pull a live RF data frame from the USRP Receiver
     rx_data = SDR_RX();
 
-    % Extract current parameters
-    current_db        = channelProfile(effectIndex, 2);
+    % Extract current parameters from processed profile matrix
+    current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
     current_pathloss  = pathloss_att(effectIndex);
     current_tumbleatt = tumble_att_dB(effectIndex);
     current_delay     = channelProfile(effectIndex, 3);
     current_fShift    = channelProfile(effectIndex, 4);
 
-    fprintf("CSV: %.2fs | Actual: %.2fs | Total Atten: %.2f dB | Path Loss: %.2f dB | Pointing Loss: %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
-        channelProfile(effectIndex,1), toc(loopTimer), ...
-        current_db, current_pathloss, current_tumbleatt, ...
-        current_delay*1e3, current_fShift);
+    % Apply a Doppler Shift and Time Delay to the digital waveform array
+    % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
+    calibrated_delay = max(current_delay - delaySDR, 0);
+    % Subtract freqOffsetHz to Obtain Desired Center Frequency
+    [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
+        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
 
-    % Apply impairments to THIS frame
-    [phaseOffset, circBuffer, writePointer, tx_data] = ...
-        applyDigitalImpairments( ...
-            rx_data, current_fShift, phaseOffset, current_delay, ...
-            circBuffer, writePointer, SamplesPerFrame, fs);
-
-    % Transmit immediately
+    % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
 
-    % Update attenuator
-    current_db = max(0, current_db);
-    if current_db ~= last_hardware_db
-        setAttenuation(att, test_channel, current_db);
-        last_hardware_db = current_db;
+    % Update Parameters (slower than the live RF pull)
+    if (channelProfile(effectIndex, 1) <= toc(loopTimer))
+        
+        % Prevent sending negative numbers or out-of-bounds values to hardware
+        current_db = max(0, current_db); 
+
+        % ADD VALUE FOR RICIAN FADING WHEN ADDED
+        fprintf("Time: %.2fs | Total Atten: %.2f dB |Path Loss Atten: %.2f dB | Pointing Loss (Tumbling): %.2f dB | Rician Fading (dB): %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
+            channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
+
+        % Send command to programmable attenuator
+        if current_db ~= last_hardware_db
+                setAttenuation(att, test_channel, current_db);
+                last_hardware_db = current_db;
+        end
+
+        % Update live plot buffers up to the current row and redraw
+        plot_times(effectIndex) = raw_times(effectIndex);
+        rng_buf(effectIndex)    = range_col(effectIndex);
+        pl_buf(effectIndex)     = pathloss_col(effectIndex);
+        delay_buf(effectIndex)  = delay_col(effectIndex);
+        dop_buf(effectIndex)    = doppler_col(effectIndex);
+
+        set(plot_rng,   'XData', plot_times(1:effectIndex), 'YData', rng_buf(1:effectIndex));
+        set(plot_pl,    'XData', plot_times(1:effectIndex), 'YData', pl_buf(1:effectIndex));
+        set(plot_delay, 'XData', plot_times(1:effectIndex), 'YData', delay_buf(1:effectIndex));
+        set(plot_dop,   'XData', plot_times(1:effectIndex), 'YData', dop_buf(1:effectIndex));
+
+        if enableTumble
+            tumb_buf(effectIndex)   = tumble_att_dB(effectIndex);
+            set(plot_tumble,   'XData', plot_times(1:effectIndex), 'YData', tumb_buf(1:effectIndex));
+        end
+
+        drawnow limitrate;
+
+        % Move to the next row in the CSV profile for the next second
+        effectIndex = effectIndex + 1;
     end
-
-    % Update plots
-    plot_times(effectIndex) = raw_times(effectIndex);
-    rng_buf(effectIndex)    = range_col(effectIndex);
-    pl_buf(effectIndex)     = pathloss_col(effectIndex);
-    delay_buf(effectIndex)  = delay_col(effectIndex);
-    dop_buf(effectIndex)    = doppler_col(effectIndex);
-
-    set(plot_rng,   'XData', plot_times(1:effectIndex), 'YData', rng_buf(1:effectIndex));
-    set(plot_pl,    'XData', plot_times(1:effectIndex), 'YData', pl_buf(1:effectIndex));
-    set(plot_delay, 'XData', plot_times(1:effectIndex), 'YData', delay_buf(1:effectIndex));
-    set(plot_dop,   'XData', plot_times(1:effectIndex), 'YData', dop_buf(1:effectIndex));
-
-    if enableTumble
-        tumb_buf(effectIndex) = tumble_att_dB(effectIndex);
-        set(plot_tumble, 'XData', plot_times(1:effectIndex), ...
-                         'YData', tumb_buf(1:effectIndex));
-    end
-
-    drawnow limitrate;
-
-    effectIndex = effectIndex + 1;
-
 end
 
 % Reset to Maximum Attenuation
@@ -332,29 +322,21 @@ function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
     end
 end
 
-%%%%%%%%%%
-% Apply Channel Impairments Through SDR
-function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
-    rx_data, fShift, phaseOffset, delay, circBuffer, writePointer, SamplesPerFrame, fs)
-    
-    % Compute and apply Doppler Shift to incoming data
+% Apply Channel Impairments Through the SDR
+function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
+
+    % Compute and apply Doppler Shift
     t = (0:SamplesPerFrame-1)' / fs;
     phaseShift = 2 * pi * fShift * t;
-    mod_data = rx_data .* exp(1j * (phaseShift + phaseOffset));
+    mod_data = data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
-    
-    % Apply Delay Through Circularly Shifted Buffer
-    writeIndices = mod((writePointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;         % Determine the block of indices where new data will be written
-    circBuffer(writeIndices) = mod_data;                                                            % Writes new data                                                           
-    delaySamples = max(round(delay * fs), 0);                                                       % Calculate how many samples back the read pointer needs to be
-    assert(delaySamples < length(circBuffer), ...                                                   % Prevents invalid delay inputs
-        'Requested delay exceeds circular buffer length.');
-    readPointer = mod((writePointer - 1) - delaySamples, length(circBuffer)) + 1;                   % Calculate the Read Pointer position relative to where new data was just written (step backward by delaySamples)
-    readIndices = mod((readPointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;           % Determine the block of indices where delayed data will be read
-    tx_data = circBuffer(readIndices);                                                              % Transmits read data
-    writePointer = mod((writePointer - 1) + SamplesPerFrame, length(circBuffer)) + 1;               % Advance the write pointer forward for the next frame's turn
+
+    % Apply Delay Through Circularly Shifted Buffer               
+    idx_shift = max(round(delay * fs), 1);
+    delayBuffer(idx_shift : idx_shift + SamplesPerFrame - 1) = mod_data;
+    tx_data = delayBuffer(1:SamplesPerFrame);
+    delayBuffer = [delayBuffer(SamplesPerFrame + 1 : end); zeros(SamplesPerFrame, 1)];
 end
-%%%%%%%%%%
 
 % Set Y-axis of a Subplot Based on the min/max of the Pass Data
     % with a small margin for readability (5% of the range, minimum 1 unit)
