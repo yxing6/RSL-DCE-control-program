@@ -15,7 +15,7 @@ att = initProgATT(att_port, att_baudrate);
 Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
-CenterFrequency = 250e6;                        % 435 MHz Carrier Frequency
+CenterFrequency = 435e6;                        % 435 MHz Carrier Frequency
 MasterClockRate = 32e6;                                             
 DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;        % 1 MSPS Sample Rate
