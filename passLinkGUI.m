@@ -309,9 +309,9 @@ function passLinkGUI
             appendLog(logArea2, 'Launch of hardwareLink.m...');
             drawnow;
             
-            evalin('base', 'hardwareLink_3');
+            evalin('base', 'hardwareLink');
             
-            appendLog(logArea2, 'hardwareLink_3.m done.');
+            appendLog(logArea2, 'hardwareLink.m done.');
         catch ME
             appendLog(logArea2, sprintf('ERROR : %s', ME.message));
         end

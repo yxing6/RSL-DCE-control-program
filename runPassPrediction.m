@@ -36,23 +36,29 @@ function numPasses = runPassPrediction(options)
 %   containing Range_m, Azimuth_deg, Elevation_deg, PathLoss_dB, Delay_s,
 %   Doppler_Hz, and Rel_Velocity_mps for that pass, sampled at SampleTime.
 
-    arguments
-        options.TLEFile      (1,1) string  = "CANX-2.tle"
-        options.SatName      (1,1) string  = "CANX-2"
-        options.GSLat        (1,1) double  = 49.2606
-        options.GSLon        (1,1) double  = -123.2460
-        options.GSName       (1,1) string  = "UBC-MCLD"
-        options.MinElevation (1,1) double  = 10.0
-        options.Frequency    (1,1) double  = 435e6 % refer to DCE system diagram 
+   arguments
+    options.TLEFile      (1,1) string   = "CANX-2.tle"
+    options.SatName      (1,1) string   = "CANX-2"
+    options.StartTime    (1,1) datetime = datetime("now", "TimeZone", "UTC")   % edit from the GUI or pass directly
+    options.GSLat        (1,1) double   = 49.2606
+    options.GSLon        (1,1) double   = -123.2460
+    options.GSName       (1,1) string   = "UBC-MCLD"
+    options.MinElevation (1,1) double   = 10.0
+    options.Frequency    (1,1) double   = 435e6 % refer to DCE system diagram 
 
-        options.DurationDays (1,1) double  = 1     % edit with the passPrediction.mlx stopTime       
-        options.SampleTime   (1,1) double  = 0.25
-        options.OutputDir    (1,1) string  = string(pwd)
-        options.ShowViewer   (1,1) logical = false  % false = scenario is not displayed
-    end
+    options.DurationDays (1,1) double   = 1     % edit with the passPrediction.mlx stopTime       
+    options.SampleTime   (1,1) double   = 15
+    options.OutputDir    (1,1) string   = string(pwd)
+    options.ShowViewer   (1,1) logical  = true       % false = scenario is not displayed
+end
 
     %% 1. Define the time window for the pass prediction
-    startTime  = datetime("now", "TimeZone", "UTC");
+    startTime = options.StartTime;
+    if isempty(startTime.TimeZone)
+        % If a naive (timezone-less) datetime was passed in (e.g. built from
+        % a date picker + a text time field in the GUI), assume UTC.
+        startTime.TimeZone = "UTC";
+    end
     stopTime   = startTime + days(options.DurationDays);
     sampleTime = options.SampleTime;
 
@@ -99,7 +105,7 @@ function numPasses = runPassPrediction(options)
     folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
     
     % Parent data folder
-    dataFolder = "CANX2 Data";
+    dataFolder = fullfile(options.OutputDir, "CANX2 Data");
     
     % Individual prediction folder
     foldername = sprintf('CANX2_Passes_%s', folderTimeString);

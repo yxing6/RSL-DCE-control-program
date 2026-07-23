@@ -1,6 +1,41 @@
 %% Programmable Attenuator and SDR Link
 
-clear; clc; 
+% --- Plot visibility toggles -------------------------------------------
+% These can be pre-set in the base workspace by passLinkGUI.m before this
+% script is run (e.g. assignin('base','showRangePlot',false)). If they are
+% not already defined (e.g. running this script directly), they default
+% to true so the script behaves exactly as before.
+if ~exist('showRangePlot',    'var'), showRangePlot    = true; end
+if ~exist('showPathLossPlot', 'var'), showPathLossPlot = true; end
+if ~exist('showDelayPlot',    'var'), showDelayPlot    = true; end
+if ~exist('showDopplerPlot',  'var'), showDopplerPlot  = true; end
+if ~exist('enableTumbleToggle','var'), enableTumbleToggle = false; end
+
+% Tumbling sub-parameters (set by passLinkGUI.m; defaults match tumbling_attenuation.m)
+if ~exist('tumbleTestCase',           'var'), tumbleTestCase           = "stable"; end
+if ~exist('tumbleSatDimensions',      'var'), tumbleSatDimensions      = [0.1 0.1 0.3]; end
+if ~exist('tumbleMass',               'var'), tumbleMass               = 4; end
+if ~exist('tumbleAntennaType',        'var'), tumbleAntennaType        = "Half-Wave Dipole"; end
+if ~exist('tumbleAntennaOrientation', 'var'), tumbleAntennaOrientation = "+X"; end
+if ~exist('tumbleDishRadius',         'var'), tumbleDishRadius         = 0.05; end
+if ~exist('tumbleShowPlots',          'var'), tumbleShowPlots          = false; end
+
+% Sécurité : si un run précédent a planté avant la libération en fin de
+% script, l'objet SDR peut encore tenir le matériel (pertinent car la GUI
+% exécute ce script en boucle dans le workspace "base" via evalin).
+if exist('SDR_RX', 'var')
+    try release(SDR_RX); catch, end
+end
+if exist('SDR_TX', 'var')
+    try release(SDR_TX); catch, end
+end
+
+% clearvars instead of clear so the toggles set above (or by the GUI)
+% survive the workspace cleanup
+clearvars -except showRangePlot showPathLossPlot showDelayPlot showDopplerPlot ...
+    enableTumbleToggle tumbleTestCase tumbleSatDimensions tumbleMass ...
+    tumbleAntennaType tumbleAntennaOrientation tumbleDishRadius tumbleShowPlots
+clc;
 
 % Define Programmable Attenuator Parameters
 att_port = "COM3";                                                               % Check COM Port; 3 is for Howard
@@ -25,7 +60,7 @@ SamplesPerFrame = 16384;                                            % 4096 in DC
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableTumble = false;               % Enable simulated tumbling of satellite
+enableTumble = enableTumbleToggle;  % Enable simulated tumbling of satellite (set via GUI, defaults to false)
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -67,41 +102,76 @@ fprintf('Loaded %s\n', file);
     % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
 markerSize = 10;
 
-liveFig = figure('Name', 'Live Pass Metrics', 'Position', [100, 100, 900, 750]);
-numPlots = 4 + enableTumble;
-tl = tiledlayout(liveFig,numPlots,1);
+% Build the ordered list of enabled plots based on the toggles above
+% (and enableTumble, which gates the tumble plot regardless of the toggle
+% since there is no tumble data unless enableTumble is true).
+plotKeys    = {};
+plotTitles  = {};
+plotYLabels = {};
+if showRangePlot
+    plotKeys{end+1}    = 'range';
+    plotTitles{end+1}  = 'Range vs. Time';
+    plotYLabels{end+1} = 'Range (km)';
+end
+if showPathLossPlot
+    plotKeys{end+1}    = 'pathloss';
+    plotTitles{end+1}  = 'Path Loss vs. Time';
+    plotYLabels{end+1} = 'Path Loss (dB)';
+end
+if showDelayPlot
+    plotKeys{end+1}    = 'delay';
+    plotTitles{end+1}  = 'Delay vs. Time';
+    plotYLabels{end+1} = 'Delay (ms)';
+end
+if showDopplerPlot
+    plotKeys{end+1}    = 'doppler';
+    plotTitles{end+1}  = 'Doppler Shift vs. Time';
+    plotYLabels{end+1} = 'Doppler (kHz)';
+end
+if enableTumble
+    plotKeys{end+1}    = 'tumble';
+    plotTitles{end+1}  = 'Pointing Loss (Tumbling) vs. Time';
+    plotYLabels{end+1} = 'Attenuation (dB)';
+end
+
+numPlots = numel(plotKeys);
+if numPlots == 0
+    error("At least one plot must be enabled (showRangePlot, showPathLossPlot, showDelayPlot or showDopplerPlot).");
+end
+
+% Single dashboard window: scrolling data table on the left,
+% the selected live plots on the right.
+liveFig = uifigure('Name', 'Live Pass Metrics', 'Position', [100, 100, 1400, 750]);
+
+leftPanel  = uipanel(liveFig, 'Title', 'Live Data Table', ...
+    'Units', 'normalized', 'Position', [0.01 0.02 0.33 0.96]);
+rightPanel = uipanel(liveFig, 'Title', 'Live Plots', ...
+    'Units', 'normalized', 'Position', [0.35 0.02 0.64 0.96]);
+
+tableColumnNames = {'Time (s)', 'Total Atten (dB)', 'Path Loss (dB)', ...
+                     'Tumbling (dB)', 'Rician (dB)', 'Delay (ms)', 'Doppler (Hz)'};
+liveTable = uitable(leftPanel, 'Units', 'normalized', 'Position', [0 0 1 1], ...
+    'ColumnName', tableColumnNames, 'Data', zeros(0, numel(tableColumnNames)));
+
+tl = tiledlayout(rightPanel,numPlots,1);
 liveTitle = sgtitle(tl, 'Live playback of recorded pass data');
 
-% Initialize plot for range
-ax1 = nexttile(tl);
-plot_rng = scatter(ax1, NaT, NaN, markerSize, 'b', 'filled');
-title(ax1, 'Range vs. Time'); ylabel(ax1, 'Range (km)'); grid(ax1, 'on');
-
-% Initialize plot for path loss
-ax2 = nexttile(tl);
-plot_pl = scatter(ax2, NaT, NaN, markerSize, 'b', 'filled');
-title(ax2, 'Path Loss vs. Time'); ylabel(ax2, 'Path Loss (dB)'); grid(ax2, 'on');
-
-% Initialize plot for delay
-ax3 = nexttile(tl);
-plot_delay = scatter(ax3, NaT, NaN, markerSize, 'b', 'filled');
-title(ax3, 'Delay vs. Time'); ylabel(ax3, 'Delay (ms)'); grid(ax3, 'on');
-
-% Initialize plot for doppler shift
-ax4 = nexttile(tl);
-plot_dop = scatter(ax4, NaT, NaN, markerSize, 'b', 'filled');
-title(ax4, 'Doppler Shift vs. Time'); ylabel(ax4, 'Doppler (kHz)'); xlabel(ax4, 'Time'); grid(ax4, 'on');
-
-% Initialize plot for tumble related attenuation (if tumble is enabled)
-if enableTumble
-    ax5 = nexttile(tl);
-    plot_tumble = scatter(ax5, NaT, NaN, markerSize, 'b', 'filled');
-    title(ax5, 'Pointing Loss (Tumbling) vs. Time'); ylabel(ax5, 'Attenuation (dB)'); xlabel(ax5, 'Time'); grid(ax5, 'on');
-    
-    linkaxes([ax1, ax2, ax3, ax4, ax5], 'x');
-else
-    linkaxes([ax1, ax2, ax3, ax4], 'x');
+% Create one tile per enabled plot and keep handles in maps keyed by plotKeys
+axMap   = containers.Map();
+plotMap = containers.Map();
+for k = 1:numPlots
+    ax = nexttile(tl);
+    p = scatter(ax, NaT, NaN, markerSize, 'b', 'filled');
+    title(ax, plotTitles{k}); ylabel(ax, plotYLabels{k}); grid(ax, 'on');
+    if k == numPlots
+        xlabel(ax, 'Time');
+    end
+    axMap(plotKeys{k})   = ax;
+    plotMap(plotKeys{k}) = p;
 end
+
+% Buffer for the scrolling table (same rows printed to the command window)
+tableData = zeros(0, numel(tableColumnNames));
 
 % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
 totalPoints = height(csv_table);
@@ -122,13 +192,35 @@ fixed_att = 125;            % 150 in DCETest
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
 % Generate CANX-2 Tumbling Attenuation Profile
+tumble_att_dB = zeros(totalPoints,1);   % default: no tumbling, needed later whether or not enableTumble is true
 if enableTumble
-    [tumble_att_dB] = tumbling_attenuation( ...
-        channelProfile(:,1), CenterFrequency,...
-        ShowPlots=false, ...
+    tumbleComponents = tumbling_attenuation( ...
+        channelProfile(:,1), CenterFrequency, ...
+        TestCase=tumbleTestCase, ...
+        SatDimensions=tumbleSatDimensions, ...
+        Mass=tumbleMass, ...
+        AntennaType=tumbleAntennaType, ...
+        AntennaOrientation=tumbleAntennaOrientation, ...
+        DishRadius=tumbleDishRadius, ...
+        ShowPlots=tumbleShowPlots, ...
         ShowAnimation=false);
+    tumble_att_dB = tumbleComponents.pointing_loss_dB;
+
     % Add Attenuation from Tumbling
     channelProfile(:,2) = channelProfile(:,2) + tumble_att_dB;
+
+    fprintf('Tumbling Profile Generated (TestCase: %s)\n', tumbleTestCase);
+
+    % Display initial tumble conditions
+    fprintf('Initial Pointing Error:\n');
+    fprintf('  Roll:  %.2f deg\n', rad2deg(tumbleComponents.InitialPointingError_rad(1)));
+    fprintf('  Pitch: %.2f deg\n', rad2deg(tumbleComponents.InitialPointingError_rad(2)));
+    fprintf('  Yaw:   %.2f deg\n', rad2deg(tumbleComponents.InitialPointingError_rad(3)));
+
+    fprintf('Initial Angular Velocity:\n');
+    fprintf('  Wx: %.4f deg/s\n', rad2deg(tumbleComponents.InitialAngularVelocity_rad_s(1)));
+    fprintf('  Wy: %.4f deg/s\n', rad2deg(tumbleComponents.InitialAngularVelocity_rad_s(2)));
+    fprintf('  Wz: %.4f deg/s\n', rad2deg(tumbleComponents.InitialAngularVelocity_rad_s(3)));
 end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
@@ -139,60 +231,42 @@ channelProfile(:,3) = csv_table{:, 6};
 channelProfile(:,4) = csv_table{:, 7};
 % channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
 
-% Generate CANX-2 Tumbling Attenuation Profile
-tumble_att_dB = zeros(totalPoints,1);
-if enableTumble
-    [tumble_att_dB, components] = tumbling_attenuation( ...
-        channelProfile(:,1), ...
-        ShowPlots=false, ...
-        ShowAnimation=false);
-    fprintf('Random Tumbling Profile Generated\n');
-    
-    % Display initial tumble conditions
-    fprintf('Initial Pointing Error:\n');
-    fprintf('  Roll:  %.2f deg\n', rad2deg(components.InitialPointingError_rad(1)));
-    fprintf('  Pitch: %.2f deg\n', rad2deg(components.InitialPointingError_rad(2)));
-    fprintf('  Yaw:   %.2f deg\n', rad2deg(components.InitialPointingError_rad(3)));
-
-    fprintf('Initial Angular Velocity:\n');
-    fprintf('  Wx: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(1)));
-    fprintf('  Wy: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(2)));
-    fprintf('  Wz: %.4f deg/s\n', rad2deg(components.InitialAngularVelocity_rad_s(3)));
-end
-
 % Columns Used for Live Plot
 range_col    = csv_table{:, 2} / 1000;   % Range_m -> km
 pathloss_col = csv_table{:, 5};          % PathLoss_dB
 delay_col    = csv_table{:, 6} * 1000;   % Delay_s -> ms
 doppler_col  = csv_table{:, 7} / 1000;   % Doppler_Hz -> kHz
 
+% Map of column data per plot key, used both for fixed Y-limits and live updates
+dataMap = containers.Map();
+dataMap('range')    = range_col;
+dataMap('pathloss') = pathloss_col;
+dataMap('delay')    = delay_col;
+dataMap('doppler')  = doppler_col;
+dataMap('tumble')   = tumble_att_dB;
+
 % Reset Plot Buffers For This Pass
 plot_times = NaT(totalPoints, 1, 'TimeZone', raw_times.TimeZone);
-rng_buf   = NaN(totalPoints, 1);
-pl_buf    = NaN(totalPoints, 1);
-delay_buf = NaN(totalPoints, 1);
-dop_buf   = NaN(totalPoints, 1);
-tumb_buf = NaN(totalPoints,1);
-
-set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename)); 
-set(plot_rng,   'XData', NaT, 'YData', NaN);
-set(plot_pl,    'XData', NaT, 'YData', NaN);
-set(plot_delay, 'XData', NaT, 'YData', NaN);
-set(plot_dop,   'XData', NaT, 'YData', NaN);
-
-if enableTumble
-    xlim([ax1, ax2, ax3, ax4, ax5], [raw_times(1), raw_times(end)]);
-    set(plot_tumble,   'XData', NaT, 'YData', NaN);
-    setFixedYLim(ax5, tumble_att_dB); % fix Y-axis of axis 5
-else
-    xlim([ax1, ax2, ax3, ax4], [raw_times(1), raw_times(end)]);
+bufMap = containers.Map();
+for k = 1:numPlots
+    bufMap(plotKeys{k}) = NaN(totalPoints, 1);
 end
 
-% Fix the Plot Y-axes for the Entire Duration of the Plot (based on the values ​​from CSV)
-setFixedYLim(ax1, range_col);
-setFixedYLim(ax2, pathloss_col);
-setFixedYLim(ax3, delay_col);
-setFixedYLim(ax4, doppler_col);
+set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename)); 
+for k = 1:numPlots
+    set(plotMap(plotKeys{k}), 'XData', NaT, 'YData', NaN);
+end
+
+axList = cellfun(@(k) axMap(k), plotKeys, 'UniformOutput', false);
+axArray = [axList{:}];
+xlim(axArray, [raw_times(1), raw_times(end)]);
+linkaxes(axArray, 'x');
+
+% Fix the Plot Y-axes for the Entire Duration of the Plot (based on the values from CSV)
+for k = 1:numPlots
+    key = plotKeys{k};
+    setFixedYLim(axMap(key), dataMap(key));
+end
 drawnow;
 
 % Reset to Maximum Attenuation
@@ -247,20 +321,23 @@ while (effectIndex <= totalPoints)
 
         % Update live plot buffers up to the current row and redraw
         plot_times(effectIndex) = raw_times(effectIndex);
-        rng_buf(effectIndex)    = range_col(effectIndex);
-        pl_buf(effectIndex)     = pathloss_col(effectIndex);
-        delay_buf(effectIndex)  = delay_col(effectIndex);
-        dop_buf(effectIndex)    = doppler_col(effectIndex);
-
-        set(plot_rng,   'XData', plot_times(1:effectIndex), 'YData', rng_buf(1:effectIndex));
-        set(plot_pl,    'XData', plot_times(1:effectIndex), 'YData', pl_buf(1:effectIndex));
-        set(plot_delay, 'XData', plot_times(1:effectIndex), 'YData', delay_buf(1:effectIndex));
-        set(plot_dop,   'XData', plot_times(1:effectIndex), 'YData', dop_buf(1:effectIndex));
-
-        if enableTumble
-            tumb_buf(effectIndex)   = tumble_att_dB(effectIndex);
-            set(plot_tumble,   'XData', plot_times(1:effectIndex), 'YData', tumb_buf(1:effectIndex));
+        for k = 1:numPlots
+            key = plotKeys{k};
+            buf = bufMap(key);
+            colData = dataMap(key);
+            buf(effectIndex) = colData(effectIndex);
+            bufMap(key) = buf;
+            set(plotMap(key), 'XData', plot_times(1:effectIndex), 'YData', buf(1:effectIndex));
         end
+
+        % Update the scrolling data table (same values as the console log
+% above). New rows are added at the bottom, and the view auto-scrolls
+% down to keep the latest sample visible.
+newRow = [channelProfile(effectIndex, 1), current_db, current_pathloss, ...
+          current_tumbleatt, 0, current_delay*1e3, current_fShift];
+tableData = [tableData; newRow];
+liveTable.Data = tableData;
+scroll(liveTable, 'bottom');
 
         drawnow limitrate;
 
@@ -281,7 +358,6 @@ release(SDR_TX);
 
 % End / Reset
 clear att;
-clear; 
 disp("Dynamic Channel Emulation Complete cleanly.");
 
 
@@ -332,7 +408,7 @@ function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fSh
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
 
     % Apply Delay Through Circularly Shifted Buffer               
-    idx_shift = max(round(delay * fs), 1);
+    idx_shift = max(round(delay * fs), 1);      % the position (the number of samples) at which the new block of data is to be inserted into the buffer
     delayBuffer(idx_shift : idx_shift + SamplesPerFrame - 1) = mod_data;
     tx_data = delayBuffer(1:SamplesPerFrame);
     delayBuffer = [delayBuffer(SamplesPerFrame + 1 : end); zeros(SamplesPerFrame, 1)];
