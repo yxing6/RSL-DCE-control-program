@@ -1,4 +1,4 @@
-function [components] = tumbling_attenuation(t, freq, options)
+function [components] = tumbling_attenuation_v2(t, freq, options)
 % TUMBLING_ATTENUATION Simulate antenna pointing loss due to CubeSat tumbling.
 %
 % This function simulates the attitude dynamics of a tumbling CubeSat and
@@ -53,9 +53,9 @@ arguments
     options.Mass                   (1,1) double  = 4                % kg
 
     options.AntennaType            (1,1) string  = "Half-Wave Dipole"
-    options.AntennaOrientation     (1,1) string  = "-z"
+    options.AntennaOrientation     (1,1) string  = "+X"
 
-    options.DishRadius             (1,1) double = 1;             % m
+    options.DishRadius             (1,1) double = 0.05;             % m
     options.AttenuationCapDB       (1,1) double  = 60               % dB
 
     options.ShowPlots              (1,1) logical = true
@@ -196,74 +196,87 @@ for k = 1:num_steps
             gain = max(gain, 10^(-options.AttenuationCapDB/10));
             pointing_loss_dB(k) = -10*log10(gain);    
         case "dish"
-            if theta > pi/2
-                gain = 10^(-options.AttenuationCapDB/10);   % rear hemisphere
+            u = k0*r*sin(theta);
+            if abs(u) < 1e-10
+                E = 1;
             else
-                u = k0*r*sin(theta);
-                if abs(u) < 1e-10
-                    E = 1;
-                else
-                    E = 2*besselj(1,u)/u;
-                end
-                gain = E^2;
+                E = 2*besselj(1,u)/u;
             end
-            gain = max(gain,10^(-options.AttenuationCapDB/10));
+            gain = E^2;
+            gain = max(gain, 10^(-options.AttenuationCapDB/10));
             pointing_loss_dB(k) = -10*log10(gain);
     end
 
 end
 
+%%
 %% Plot Antenna Pattern
 
-% Radiation pattern
+theta_plot = linspace(0,pi,100);
+phi_plot   = linspace(0,2*pi,100);
+
+[theta_plot,phi_plot] = meshgrid(theta_plot,phi_plot);
+
+
+% Radiation pattern (antenna coordinate system, boresight = +Z)
+
 switch lower(options.AntennaType)
+
     case "half-wave dipole"
-        theta_plot = linspace(0,pi,100);
-        phi_plot   = linspace(0,2*pi,100);
-        [theta_plot,phi_plot] = meshgrid(theta_plot,phi_plot);
         gain_plot = (cos(pi/2*cos(theta_plot))./sin(theta_plot)).^2;
+
     case "quarter-wave monopole"
-        theta_plot = linspace(0,pi,100);
-        phi_plot   = linspace(0,2*pi,100);
-        [theta_plot,phi_plot] = meshgrid(theta_plot,phi_plot);
         gain_plot = (cos(pi/2*cos(theta_plot))./sin(theta_plot)).^2;
+
     case "dish"
-        theta_plot = linspace(0,pi/2,100);
-        phi_plot   = linspace(0,2*pi,100);
-        [theta_plot,phi_plot] = meshgrid(theta_plot,phi_plot);
         u = k0*r*sin(theta_plot);
+
         gain_plot = ones(size(u));
         idx = abs(u)>1e-10;
+
         gain_plot(idx) = ...
             (2*besselj(1,u(idx))./u(idx)).^2;
 end
+
+
 gain_plot(~isfinite(gain_plot)) = 0;
 gain_plot = gain_plot/max(gain_plot(:));
 
+
 % Convert gain to radius
 rho = sqrt(gain_plot);
+
 X = rho.*sin(theta_plot).*cos(phi_plot);
 Y = rho.*sin(theta_plot).*sin(phi_plot);
 Z = rho.*cos(theta_plot);
 
+
+
 % Rotate +Z antenna axis to actual mounting direction
+
 z_axis = [0;0;1];
 v = cross(z_axis,antenna_body);
 s = norm(v);
 c = dot(z_axis,antenna_body);
 
+
 if s > 1e-10
     vx = [ 0 -v(3) v(2);
            v(3) 0 -v(1);
           -v(2) v(1) 0];
+
     R_ant = eye(3)+vx+vx^2*((1-c)/s^2);
 else
     R_ant = eye(3);
 end
+
+
 P = R_ant*[X(:)';Y(:)';Z(:)'];
+
 X = reshape(P(1,:),size(X));
 Y = reshape(P(2,:),size(Y));
 Z = reshape(P(3,:),size(Z));
+
 
 figure
 surf(X,Y,Z,gain_plot,'EdgeColor','none')
