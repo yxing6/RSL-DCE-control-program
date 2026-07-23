@@ -53,7 +53,7 @@ arguments
     options.Mass                   (1,1) double  = 4                % kg
 
     options.AntennaType            (1,1) string  = "Half-Wave Dipole"
-    options.AntennaOrientation     (1,1) string  = "-z"
+    options.AntennaOrientation     (1,1) string  = "+X"
 
     options.DishRadius             (1,1) double = 1;             % m
     options.AttenuationCapDB       (1,1) double  = 60               % dB
