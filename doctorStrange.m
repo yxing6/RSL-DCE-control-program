@@ -15,22 +15,22 @@ att = initProgATT(att_port, att_baudrate);
 Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
-CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
+CenterFrequency = 250e6;                        % 435 MHz Carrier Frequency
 MasterClockRate = 32e6;                                             
 DecimationFactor = 32; InterpolationFactor = DecimationFactor;
-fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
+fs = MasterClockRate / DecimationFactor;        % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-% delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation       %%%%%%%%%%
+% delayBuffer = zeros(256e3,1);                 % Memory array for time-delay emulation       %%%%%%%%%%
 %%%%%%%%%%
-%circBuffer   = zeros(256e3, 1);    % Memory array for time-delay emulation
-circBuffer   = zeros(1.02e6, 1);    % Memory array for time-delay emulation
-writePointer = 1;                       % Tracks where incoming RX data gets written
+circBuffer   = zeros(256e3, 1);                 % Memory array for time-delay emulation
+% circBuffer   = zeros(1.02e6, 1);              % Memory array for time-delay emulation (enables up to 1 second delay for testing)
+writePointer = 1;                               % Tracks where incoming RX data gets written
 %%%%%%%%%%
-SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
-% delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
+SamplesPerFrame = 4096;                         
+% delaySDR = SamplesPerFrame/fs;                % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableTumble = false;               % Enable simulated tumbling of satellite
+enableTumble = false;                           % Enable simulated tumbling of satellite
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -46,8 +46,8 @@ cleanupTX = onCleanup(@() release(SDR_TX));
 % Synchronize B210 & Signal generator 
 % Verify External 10 MHz Reference Lock Before Proceeding
 disp("Checking external 10 MHz reference lock...");
-pause(1);                                   % Give the radio a moment to attempt lock after object creation
-if ~referenceLockedStatus(SDR_RX)           % SDR_RX & TX share the same clock : 1 test is enough
+pause(1);                                       % Give the radio a moment to attempt lock after object creation
+if ~referenceLockedStatus(SDR_RX)               % SDR_RX & TX share the same clock : 1 test is enough
     error("SDR_RX is not locked to the external 10 MHz reference. Check REF OUT -> REF IN cabling and that the signal generator's reference output is enabled.");
 end
 disp("External reference locked successfully.");
@@ -144,9 +144,9 @@ end
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
 % channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
-% channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                  % Enable for Circular Buffer Delay Testing                   
-channelProfile(1:9,3) = 0;                                           % Enable for Circular Buffer Delay Testing           
-channelProfile(10:end,3) = 1;                                            % Enable for Circular Buffer Delay Testing
+% channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                % Enable for Circular Buffer Delay Testing                   
+channelProfile(1:9,3) = 0;                                              % Enable for Circular Buffer Delay Testing           
+channelProfile(10:end,3) = 0.1;                                         % Enable for Circular Buffer Delay Testing
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
