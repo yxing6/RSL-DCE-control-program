@@ -5,6 +5,10 @@
 % script is run (e.g. assignin('base','showRangePlot',false)). If they are
 % not already defined (e.g. running this script directly), they default
 % to true
+
+if ~exist('carrierFreq',    'var'), carrierFreq = 435e6; end
+if ~exist('comPort', 'var'), comPort = "COM3"; end
+
 if ~exist('showRangePlot',    'var'), showRangePlot    = true; end
 if ~exist('showPathLossPlot', 'var'), showPathLossPlot = true; end
 if ~exist('showDelayPlot',    'var'), showDelayPlot    = true; end
@@ -32,13 +36,13 @@ end
 
 % clearvars so the toggles set above (or by the GUI)
 % survive the workspace cleanup
-clearvars -except showRangePlot showPathLossPlot showDelayPlot showDopplerPlot ...
+clearvars -except carrierFreq comPort showRangePlot showPathLossPlot showDelayPlot showDopplerPlot ...
     enableFading enableTumbleToggle tumbleTestCase tumbleSatDimensions tumbleMass ...
     tumbleAntennaType tumbleAntennaOrientation tumbleDishRadius tumbleShowPlots
 clc;
 
 % Define Programmable Attenuator Parameters
-att_port = "COM3";                                                        
+att_port = comPort;                                                        
 att_baudrate = 115200;       
 test_channel = 1;
 
@@ -50,7 +54,7 @@ att = initProgATT(att_port, att_baudrate);
 Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
-CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
+CenterFrequency = carrierFreq;            % 435 MHz Carrier Frequency
 MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
 DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
@@ -220,7 +224,8 @@ if enableTumble
         Mass=tumbleMass, ...
         AntennaType=tumbleAntennaType, ...
         AntennaOrientation=tumbleAntennaOrientation, ...
-        DishRadius=tumbleDishRadius,);
+        DishRadius=tumbleDishRadius, ...
+        ShowPlots=tumbleShowPlots);
     tumble_att_dB = tumbleComponents.pointing_loss_dB;
 
     % Add Attenuation from Tumbling

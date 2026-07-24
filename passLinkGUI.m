@@ -311,6 +311,9 @@ function passLinkGUI
         try
             % hardwareLink.m is a script: write the plot toggles into the
             % base workspace, then run the script there so it can see them.
+            assignin('base', 'carrierFreq', carrierFreq.Value);
+            assignin('base', 'comPort', string(comPort.Value));
+
             assignin('base', 'showRangePlot',     rangePlotCheck.Value);
             assignin('base', 'showPathLossPlot',  pathLossPlotCheck.Value);
             assignin('base', 'showDelayPlot',     delayPlotCheck.Value);
