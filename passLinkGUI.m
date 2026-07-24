@@ -123,8 +123,8 @@ function passLinkGUI
 
     %% ================= TAB 2: Hardware Link Playback =================
     g2 = uigridlayout(tab2);
-    g2.RowHeight   = [repmat({32}, 1, 6), {1}, {32}, {260}];
-    g2.ColumnWidth = {20, '1x'};
+    g2.RowHeight = {60,32,32,32,32,32,32,32,1,40,'1x'};
+    g2.ColumnWidth = {200,'1x'};
     g2.RowSpacing = 6;
 
     infoLabel = uilabel(g2, 'Text', ...
@@ -134,26 +134,47 @@ function passLinkGUI
     infoLabel.WordWrap = 'on';
     infoLabel.Layout.Row = 1; infoLabel.Layout.Column = [1 2];
 
+    lbl = uilabel(g2, 'Text', 'COM Port:');
+    lbl.Layout.Row = 2;
+    lbl.Layout.Column = 1;
+    % Detect available COM ports
+    comPorts = serialportlist("available");
+    if isempty(comPorts)
+        comPorts = "No ports found";
+    end
+    comPort = uidropdown(g2, ...
+        'Items', cellstr(comPorts), ...
+        'Value', comPorts(1));
+    comPort.Layout.Row = 2;
+    comPort.Layout.Column = 2;
+
+    lbl = uilabel(g2, 'Text', 'Carrier Frequency (Hz):');
+    lbl.Layout.Row = 3;
+    lbl.Layout.Column = 1;
+    carrierFreq = uieditfield(g2, 'numeric', 'Value', 435e6);
+    carrierFreq.Layout.Row = 3;
+    carrierFreq.Layout.Column = 2;
+
     rangePlotCheck = uicheckbox(g2, 'Text', 'Show Range Plot', 'Value', true);
-    rangePlotCheck.Layout.Row = 2; rangePlotCheck.Layout.Column = [1 2];
+    rangePlotCheck.Layout.Row = 4; rangePlotCheck.Layout.Column = [1 2];
 
     pathLossPlotCheck = uicheckbox(g2, 'Text', 'Show Path Loss Plot', 'Value', true);
-    pathLossPlotCheck.Layout.Row = 3; pathLossPlotCheck.Layout.Column = [1 2];
+    pathLossPlotCheck.Layout.Row = 5; pathLossPlotCheck.Layout.Column = [1 2];
 
     delayPlotCheck = uicheckbox(g2, 'Text', 'Show Delay Plot', 'Value', true);
-    delayPlotCheck.Layout.Row = 4; delayPlotCheck.Layout.Column = [1 2];
+    delayPlotCheck.Layout.Row = 6; delayPlotCheck.Layout.Column = [1 2];
 
     dopplerPlotCheck = uicheckbox(g2, 'Text', 'Show Doppler Plot', 'Value', true);
-    dopplerPlotCheck.Layout.Row = 5; dopplerPlotCheck.Layout.Column = [1 2];
+    dopplerPlotCheck.Layout.Row = 7; dopplerPlotCheck.Layout.Column = [1 2];
 
     tumbleCheck = uicheckbox(g2, 'Text', 'Enable Tumbling Simulation (tumbling_attenuation.m)', 'Value', false);
-    tumbleCheck.Layout.Row = 6; tumbleCheck.Layout.Column = [1 2];
+    tumbleCheck.Layout.Row = 8; tumbleCheck.Layout.Column = [1 2];
     tumbleCheck.ValueChangedFcn = @(~,~) toggleTumblePanel();
 
     % --- Tumbling options sub-panel: indented (column 2 only, leaving a
     % 20px gap in column 1) and shown/hidden when the checkbox toggles ---
     tumblePanel = uipanel(g2, 'Title', 'Tumbling Options', 'Visible', 'off');
-    tumblePanel.Layout.Row = 7; tumblePanel.Layout.Column = 2;
+    tumblePanel.Layout.Row = 9; tumblePanel.Layout.Column = 2;
 
     tp = uigridlayout(tumblePanel);
     tp.RowHeight   = repmat({28}, 1, 7);
@@ -199,11 +220,11 @@ function passLinkGUI
     tumbleShowPlotsCheck.Layout.Row = 7; tumbleShowPlotsCheck.Layout.Column = [1 2];
 
     runBtn2 = uibutton(g2, 'Text', 'Run Hardware Link', 'FontWeight', 'bold');
-    runBtn2.Layout.Row = 8; runBtn2.Layout.Column = [1 2];
+    runBtn2.Layout.Row = 10; runBtn2.Layout.Column = [1 2];
     runBtn2.ButtonPushedFcn = @(~,~) runHardwareLinkCallback();
 
     logArea2 = uitextarea(g2, 'Value', {'Ready.'}, 'Editable', 'off');
-    logArea2.Layout.Row = 9; logArea2.Layout.Column = [1 2];
+    logArea2.Layout.Row = 11; logArea2.Layout.Column = [1 2];
 
     %% ================= Callbacks (nested functions) =================
 
@@ -268,11 +289,12 @@ function passLinkGUI
     function toggleTumblePanel()
         if tumbleCheck.Value
             tumblePanel.Visible = 'on';
-            g2.RowHeight{7} = 230;
+            g2.RowHeight{9} = 220;
         else
             tumblePanel.Visible = 'off';
-            g2.RowHeight{7} = 1;
+            g2.RowHeight{9} = 1;
         end
+        drawnow;
     end
 
     function updateDishRadiusState()
