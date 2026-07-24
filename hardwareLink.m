@@ -77,7 +77,7 @@ if enableFading
     K = 10; % Default 10, typical for SatCom
     fadeRate = 5; % Slow-varying fading
 else
-    K = Inf; % negligible fade
+    K = 1e50; % negligible fade
     fadeRate = 0;
 end
 ricianChan = comm.RicianChannel( ...
