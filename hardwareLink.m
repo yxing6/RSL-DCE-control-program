@@ -4,11 +4,12 @@
 % These can be pre-set in the base workspace by passLinkGUI.m before this
 % script is run (e.g. assignin('base','showRangePlot',false)). If they are
 % not already defined (e.g. running this script directly), they default
-% to true so the script behaves exactly as before.
+% to true
 if ~exist('showRangePlot',    'var'), showRangePlot    = true; end
 if ~exist('showPathLossPlot', 'var'), showPathLossPlot = true; end
 if ~exist('showDelayPlot',    'var'), showDelayPlot    = true; end
 if ~exist('showDopplerPlot',  'var'), showDopplerPlot  = true; end
+if ~exist('enableFading','var'), enableFading = true; end
 if ~exist('enableTumbleToggle','var'), enableTumbleToggle = false; end
 
 % Tumbling sub-parameters (set by passLinkGUI.m; defaults match tumbling_attenuation.m)
@@ -20,9 +21,8 @@ if ~exist('tumbleAntennaOrientation', 'var'), tumbleAntennaOrientation = "+X"; e
 if ~exist('tumbleDishRadius',         'var'), tumbleDishRadius         = 0.05; end
 if ~exist('tumbleShowPlots',          'var'), tumbleShowPlots          = false; end
 
-% Sécurité : si un run précédent a planté avant la libération en fin de
-% script, l'objet SDR peut encore tenir le matériel (pertinent car la GUI
-% exécute ce script en boucle dans le workspace "base" via evalin).
+
+% Release SDR if crashes
 if exist('SDR_RX', 'var')
     try release(SDR_RX); catch, end
 end
@@ -30,15 +30,15 @@ if exist('SDR_TX', 'var')
     try release(SDR_TX); catch, end
 end
 
-% clearvars instead of clear so the toggles set above (or by the GUI)
+% clearvars so the toggles set above (or by the GUI)
 % survive the workspace cleanup
 clearvars -except showRangePlot showPathLossPlot showDelayPlot showDopplerPlot ...
-    enableTumbleToggle tumbleTestCase tumbleSatDimensions tumbleMass ...
+    enableFading enableTumbleToggle tumbleTestCase tumbleSatDimensions tumbleMass ...
     tumbleAntennaType tumbleAntennaOrientation tumbleDishRadius tumbleShowPlots
 clc;
 
 % Define Programmable Attenuator Parameters
-att_port = "COM3";                                                               % Check COM Port; 3 is for Howard
+att_port = "COM3";                                                        
 att_baudrate = 115200;       
 test_channel = 1;
 
@@ -68,6 +68,25 @@ disp("Initializing USRP SDR Hardware...");
     rxGain,txGain,MasterClockRate,DecimationFactor,InterpolationFactor, ...
     OutputDataType,SamplesPerFrame);
 
+% Configure Fading Parameters
+if enableFading
+    K = 10; % Default 10, typical for SatCom
+    fadeRate = 5; % Slow-varying fading
+else
+    K = Inf; % negligible fade
+    fadeRate = 0;
+end
+ricianChan = comm.RicianChannel( ...
+    'SampleRate', fs, ...
+    'KFactor', K, ...
+    'MaximumDopplerShift', fadeRate, ...
+    'PathDelays', 0, ...
+    'AveragePathGains', 0, ...
+    'DirectPathDopplerShift', 0, ...
+    'DirectPathInitialPhase', 0, ...
+    'FadingTechnique', 'Filtered Gaussian noise', ...
+    'PathGainsOutputPort', true);
+
 % Releases COM Port and SDR When Script Ends or Has Errors Mid-Run
 cleanupAtt = onCleanup(@() clear('att')); 
 cleanupRX = onCleanup(@() release(SDR_RX));
@@ -77,7 +96,7 @@ cleanupTX = onCleanup(@() release(SDR_TX));
 % Verify External 10 MHz Reference Lock Before Proceeding
 disp("Checking external 10 MHz reference lock...");
 pause(1);                                   % Give the radio a moment to attempt lock after object creation
-if ~referenceLockedStatus(SDR_RX)           % SDR_RX & TX share the same clock : 1 test is enough
+if ~referenceLockedStatus(SDR_RX)           % SDR_RX & TX share the same clock
     error("SDR_RX is not locked to the external 10 MHz reference. Check REF OUT -> REF IN cabling and that the signal generator's reference output is enabled.");
 end
 disp("External reference locked successfully.");
@@ -170,12 +189,12 @@ for k = 1:numPlots
     plotMap(plotKeys{k}) = p;
 end
 
-% Buffer for the scrolling table (same rows printed to the command window)
-tableData = zeros(0, numel(tableColumnNames));
-
 % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
 totalPoints = height(csv_table);
 channelProfile = zeros(totalPoints, 4);     % Columns: 1=Time, 2=Atten, 3=Delay, 4=Doppler
+
+% Buffer for the scrolling table (same rows printed to the command window)
+tableData = nan(totalPoints, numel(tableColumnNames));
 
 % Convert the Datetime Column Into Relative Elapsed Seconds Starting at 0
 raw_times = datetime(csv_table{:, 1}); 
@@ -188,7 +207,7 @@ channelProfile(:,2) = csv_table{:, 5};
 pathloss_att = channelProfile(:,2);
 
 % Normalise Dynamic Attenuation Control by In-line Losses 
-fixed_att = 125;            % 150 in DCETest
+fixed_att = 125;            
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
 % Generate CANX-2 Tumbling Attenuation Profile
@@ -201,26 +220,11 @@ if enableTumble
         Mass=tumbleMass, ...
         AntennaType=tumbleAntennaType, ...
         AntennaOrientation=tumbleAntennaOrientation, ...
-        DishRadius=tumbleDishRadius, ...
-        ShowPlots=tumbleShowPlots, ...
-        ShowAnimation=false);
+        DishRadius=tumbleDishRadius,);
     tumble_att_dB = tumbleComponents.pointing_loss_dB;
 
     % Add Attenuation from Tumbling
     channelProfile(:,2) = channelProfile(:,2) + tumble_att_dB;
-
-    fprintf('Tumbling Profile Generated (TestCase: %s)\n', tumbleTestCase);
-
-    % Display initial tumble conditions
-    fprintf('Initial Pointing Error:\n');
-    fprintf('  Roll:  %.2f deg\n', rad2deg(tumbleComponents.InitialPointingError_rad(1)));
-    fprintf('  Pitch: %.2f deg\n', rad2deg(tumbleComponents.InitialPointingError_rad(2)));
-    fprintf('  Yaw:   %.2f deg\n', rad2deg(tumbleComponents.InitialPointingError_rad(3)));
-
-    fprintf('Initial Angular Velocity:\n');
-    fprintf('  Wx: %.4f deg/s\n', rad2deg(tumbleComponents.InitialAngularVelocity_rad_s(1)));
-    fprintf('  Wy: %.4f deg/s\n', rad2deg(tumbleComponents.InitialAngularVelocity_rad_s(2)));
-    fprintf('  Wz: %.4f deg/s\n', rad2deg(tumbleComponents.InitialAngularVelocity_rad_s(3)));
 end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
@@ -297,8 +301,8 @@ while (effectIndex <= totalPoints)
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     calibrated_delay = max(current_delay - delaySDR, 0);
     % Subtract freqOffsetHz to Obtain Desired Center Frequency
-    [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
+    [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(...
+        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs, ricianChan);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
@@ -309,9 +313,9 @@ while (effectIndex <= totalPoints)
         % Prevent sending negative numbers or out-of-bounds values to hardware
         current_db = max(0, current_db); 
 
-        % ADD VALUE FOR RICIAN FADING WHEN ADDED
+        % Print channel profiles to command window (for debugging)
         fprintf("Time: %.2fs | Total Atten: %.2f dB |Path Loss Atten: %.2f dB | Pointing Loss (Tumbling): %.2f dB | Rician Fading (dB): %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
-            channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
+            channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, fade_dB, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
         if current_db ~= last_hardware_db
@@ -333,10 +337,15 @@ while (effectIndex <= totalPoints)
         % Update the scrolling data table (same values as the console log
 % above). New rows are added at the bottom, and the view auto-scrolls
 % down to keep the latest sample visible.
-newRow = [channelProfile(effectIndex, 1), current_db, current_pathloss, ...
-          current_tumbleatt, 0, current_delay*1e3, current_fShift];
-tableData = [tableData; newRow];
-liveTable.Data = tableData;
+tableData(effectIndex,:) = [ ...
+    channelProfile(effectIndex,1), ...
+    current_db, ...
+    current_pathloss, ...
+    current_tumbleatt, ...
+    fade_dB, ...
+    current_delay*1e3, ...
+    current_fShift];
+liveTable.Data = tableData(1:effectIndex,:);
 scroll(liveTable, 'bottom');
 
         drawnow limitrate;
@@ -399,13 +408,17 @@ function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
 end
 
 % Apply Channel Impairments Through the SDR
-function [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs)
+function [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs, ricianChan)
 
     % Compute and apply Doppler Shift
     t = (0:SamplesPerFrame-1)' / fs;
     phaseShift = 2 * pi * fShift * t;
     mod_data = data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
+
+    % Apply Rician Fading and take RMS value for frame for printing
+    [mod_data, pathGains] = ricianChan(mod_data);
+    fade_dB = 20*log10(max(rms(abs(pathGains)),eps));
 
     % Apply Delay Through Circularly Shifted Buffer               
     idx_shift = max(round(delay * fs), 1);      % the position (the number of samples) at which the new block of data is to be inserted into the buffer
