@@ -24,8 +24,6 @@ function [components] = tumbling_attenuation(t, freq, options)
 %   AttenuationCapDB    Maximum pointing loss applied to the radiation
 %                       pattern (dB).
 %   ShowPlots           Display pointing error and attenuation plots.
-%   ShowAnimation       Display a 3-D spacecraft tumble animation.
-%   PlaybackSpeed       Animation playback speed relative to real time.
 %   TestCase            Test Cases. Supported options:
 %                         - "stable"
 %                         - "drift"
@@ -59,8 +57,6 @@ arguments
     options.AttenuationCapDB       (1,1) double  = 60               % dB
 
     options.ShowPlots              (1,1) logical = true
-    options.ShowAnimation          (1,1) logical = false
-    options.PlaybackSpeed          (1,1) double  = 5                % animation speed, x real-time
     options.TestCase               (1,1) string = "stable" 
 end
 
@@ -309,98 +305,11 @@ if options.ShowPlots
     xlabel('Time (s)'); ylabel('Attenuation (dB)')
 end
 
-    if options.ShowAnimation
-        animate_tumble(t, q, a, b, c, antenna_body, ground_station_inertial, ...
-            options.PlaybackSpeed, options.SatName);
-    end
-
 end
 
 %% ============================================================
 % Helper Functions
 % ============================================================
-
-% 3D Tumble Animation
-function animate_tumble(t, q, Lx, Ly, Lz, antenna_body, ground_station_inertial, playback_speed, sat_name)
-% Renders the satellite body rotating
-% with the antenna boresight(red) and the fixed ground-station direction (green).
-
-if nargin < 5
-    playback_speed = 50;
-end
-if nargin < 6
-    sat_name = "Satellite";
-end
-
-% Box vertices in body frame, centered at origin
-verts0 = 0.5*[ -Lx -Ly -Lz;  Lx -Ly -Lz;  Lx  Ly -Lz; -Lx  Ly -Lz; ...
-               -Lx -Ly  Lz;  Lx -Ly  Lz;  Lx  Ly  Lz; -Lx  Ly  Lz];
-faces = [1 2 3 4; 5 6 7 8; 1 2 6 5; 2 3 7 6; 3 4 8 7; 4 1 5 8];
-
-fig = figure('Color','w','Position',[100 100 650 600]);
-ax = axes('Parent',fig); hold(ax,'on'); grid(ax,'on'); axis(ax,'equal');
-lim = 0.4;
-xlim(ax,[-lim lim]); ylim(ax,[-lim lim]); zlim(ax,[-lim lim]);
-xlabel(ax,'X (inertial)'); ylabel(ax,'Y (inertial)'); zlabel(ax,'Z (inertial)');
-view(ax,135,20);
-
-bodyPatch = patch('Parent',ax,'Vertices',verts0,'Faces',faces, ...
-    'FaceColor',[0.3 0.6 0.9],'FaceAlpha',0.7,'EdgeColor','k');
-
-antennaLine = plot3(ax,[0 0],[0 0],[0 0],'r-','LineWidth',3);
-gsLine = plot3(ax,[0 0],[0 0],[0 0],'g--','LineWidth',2);
-titleHandle = title(ax,'');
-legend(ax,[antennaLine, gsLine],{'Antenna boresight','Ground station direction'}, ...
-    'Location','northoutside');
-
-% Downsample frames for rendering
-step = 10;
-frame_idx = 1:step:length(t);
-
-    while isvalid(fig)
-    
-        playback_clock = tic;
-        sim_time_at_start = t(frame_idx(1));
-    
-        for k = frame_idx
-    
-            if ~isvalid(fig)
-                return
-            end
-    
-            qk = q(k,:)';
-            R = quat2rotm_scalar(qk);
-    
-            verts_k = (R*verts0')';
-            set(bodyPatch,'Vertices',verts_k);
-    
-            antenna_inertial = R*antenna_body*(lim*0.9);
-            set(antennaLine,...
-                'XData',[0 antenna_inertial(1)],...
-                'YData',[0 antenna_inertial(2)],...
-                'ZData',[0 antenna_inertial(3)]);
-    
-            gs_vec = ground_station_inertial*(lim*0.9);
-            set(gsLine,...
-                'XData',[0 gs_vec(1)],...
-                'YData',[0 gs_vec(2)],...
-                'ZData',[0 gs_vec(3)]);
-    
-            set(titleHandle,'String',sprintf( ...
-                '%s Tumble Animation | t = %.0f s (%.0fx speed)', ...
-                sat_name, t(k), playback_speed));
-    
-            drawnow
-    
-            target_wall_time = (t(k)-sim_time_at_start)/playback_speed;
-            actual_wall_time = toc(playback_clock);
-    
-            if target_wall_time > actual_wall_time
-                pause(target_wall_time-actual_wall_time)
-            end
-        end    
-    end
-end
 
 % Satellite Rotational Dynamics
 function dstate = satellite_dynamics(~,state,J)
