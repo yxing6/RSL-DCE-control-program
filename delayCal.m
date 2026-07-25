@@ -6,8 +6,9 @@ SerialNum = "32418F5";
 ChannelMapping = 1;
 CenterFrequency = 435e6;
 MasterClockRate = 56e6;
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;
-fs = 1e6;
+DecimationFactor = 56; 
+InterpolationFactor = DecimationFactor;
+fs = MasterClockRate/DecimationFactor;
 rxGain = 25; txGain = 50;              
 SamplesPerFrame = 16384;
 OutputDataType = "double";
@@ -32,9 +33,10 @@ disp("Flushing...");
 flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 1);
 
 % build m-seq
-p = 7;
-N = 2^p - 1; %127
-state = ones(1,p);%inital state
+% I think that you need m=10 in order to prevent aliasing
+m = 7;
+N = 2^m - 1; %127
+state = ones(1,m);%inital state
 seq = ones(1,N);
 for i = 1:N
     seq(i) = state(end); %output bit
