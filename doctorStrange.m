@@ -54,7 +54,7 @@ disp("External reference locked successfully.");
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
-flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 10);
+flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 3);
 
 % Import Path from CSV
 [file, path] = uigetfile('*.csv', 'Select a CSV File');
@@ -143,17 +143,17 @@ end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
-% channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
-% channelProfile(:,3) = 0.1*ones(size(csv_table{:, 6}));                % Enable for Circular Buffer Delay Testing                   
-channelProfile(1:9,3) = 0;                                              % Enable for Circular Buffer Delay Testing           
-channelProfile(10:end,3) = 0.1;                                         % Enable for Circular Buffer Delay Testing
+% channelProfile(:,3) = zeros(size(csv_table{:, 6}));                     % Enable to Turn Delay Off                                         
+% channelProfile(:,3) = ones(size(csv_table{:, 6}));                      % Enable for Circular Buffer Delay Testing                   
+channelProfile(1:10,3) = 0;                                                % Enable for Circular Buffer Delay Testing           
+channelProfile(11:end,3) = 0.1;                                           % Enable for Circular Buffer Delay Testing
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
-% channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
-channelProfile(1:x,4) = 7000;                                           % Enable for Circular Buffer Delay Testing           
-channelProfile(x+1:t,4) = 0;                                            % Enable for Circular Buffer Delay Testing
-channelProfile(t+1:end,4) = -7000;                                      % Enable for Circular Buffer Delay Testing           
+% channelProfile(:,4) = zeros(size(csv_table{:, 7}));                     % Enable to Turn Doppler Shift Off
+channelProfile(1:x,4) = 7000;                                             % Enable for Circular Buffer Delay Testing           
+channelProfile(x+1:t,4) = 0;                                              % Enable for Circular Buffer Delay Testing
+channelProfile(t+1:end,4) = -7000;                                        % Enable for Circular Buffer Delay Testing           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -244,7 +244,7 @@ while (effectIndex <= totalPoints)
     [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
         rx_data, current_fShift, phaseOffset, current_delay, circBuffer, writePointer, SamplesPerFrame, fs);
     %%%%%%%%%%
-
+    
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
 
@@ -326,7 +326,8 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6);
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6, ...
+    TimestampMode="high-precision");
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...
@@ -346,12 +347,12 @@ end
 function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
     rx_data, fShift, phaseOffset, delay, circBuffer, writePointer, SamplesPerFrame, fs)
     
-    % Compute and apply Doppler Shift to incoming data
+    % Compute and apply Doppler Shift 
     t = (0:SamplesPerFrame-1)' / fs;
     phaseShift = 2 * pi * fShift * t;
     mod_data = rx_data .* exp(1j * (phaseShift + phaseOffset));
     phaseOffset = mod(phaseOffset + phaseShift(end) + (2 * pi * fShift / fs), 2 * pi); 
-    
+
     % Apply Delay Through Circularly Shifted Buffer
     writeIndices = mod((writePointer - 1) + (0:SamplesPerFrame-1), length(circBuffer)) + 1;         % Determine the block of indices where new data will be written
     circBuffer(writeIndices) = mod_data;                                                            % Writes new data                                                           

@@ -138,8 +138,8 @@ end
 channelProfile(:,3) = csv_table{:, 6};                                         
 % channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
 % channelProfile(:,3) = ones(size(csv_table{:, 6}));                    % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)                   
-channelProfile(1:x,3) = 0;                                              % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
-channelProfile(x+1:end,3) = 0.1;                                        % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+channelProfile(1:10,3) = 0;                                             % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
+channelProfile(11:end,3) = 0.1;                                         % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
