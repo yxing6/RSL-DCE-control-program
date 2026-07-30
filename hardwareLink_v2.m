@@ -245,7 +245,7 @@ while (effectIndex <= totalPoints)
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
     % calibrated_delay = max(current_delay - delaySDR, 0);       
-    % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpairments(...                 %%%%%%%%%%
+    % [phaseOffset, delayBuffer, tx_data] = applyDigitalImpai rments(...                 %%%%%%%%%%
     %     rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs);
     %%%%%%%%%%
     [phaseOffset, tx_data] = applyDigitalImpairments(...
