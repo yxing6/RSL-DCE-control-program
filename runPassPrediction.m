@@ -44,12 +44,12 @@ function numPasses = runPassPrediction(options)
     options.GSLon        (1,1) double   = -123.2460
     options.GSName       (1,1) string   = "UBC-MCLD"
     options.MinElevation (1,1) double   = 10.0
-    options.Frequency    (1,1) double   = 435e6 % refer to DCE system diagram 
+    options.Frequency    (1,1) double   = 435e6                     % refer to DCE system diagram 
 
-    options.DurationDays (1,1) double   = 1     % edit with the passPrediction.mlx stopTime       
+    options.DurationDays (1,1) double   = 1                               
     options.SampleTime   (1,1) double   = 15
     options.OutputDir    (1,1) string   = string(pwd)
-    options.ShowViewer   (1,1) logical  = true       % false = scenario is not displayed
+    options.ShowViewer   (1,1) logical  = true                      % false = scenario is not displayed
 end
 
     %% 1. Define the time window for the pass prediction
@@ -93,13 +93,6 @@ end
         fprintf("No passes found in the requested window.\n");
         return;
     end
-
-    % %% 7. Create output folder
-    % folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
-    % foldername = sprintf('CANX2_Passes_%s', folderTimeString);
-    % if ~exist(foldername, 'dir')
-    %     mkdir(foldername);
-    % end
 
     %% 7. Create output folder structure
     folderTimeString = char(string(passes.StartTime(1), 'yyyyMMdd_HHmmss'));
@@ -161,8 +154,8 @@ end
         fprintf('Saved: %s\n', filepath);
     end
 
-    %% 9. Optional: open satellite scenario viewer 
-    % viewer must be launched after all the resource-intensive calculations have been completed
+    %% 9. Optional: open satellite scenario viewer. 
+    % Viewer must be launched after all the resource-intensive calculations have been completed
     % so as not to freeze the animation
     if options.ShowViewer && ~batchStartupOptionUsed()
         v = satelliteScenarioViewer(scenario, "PlaybackSpeedMultiplier", 60);
