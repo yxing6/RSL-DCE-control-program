@@ -25,7 +25,7 @@ SamplesPerFrame = 16384;                                            % 4096 in DC
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableFading = False;
+enableFading = false;
 enableTumble = false;               % Enable simulated tumbling of satellite
 
 % Configure Fading Parameters

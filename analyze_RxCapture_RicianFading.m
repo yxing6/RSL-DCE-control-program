@@ -104,12 +104,17 @@ fprintf('      Configuration attendue : K=%.2f, fadeRate=%.2f Hz\n\n', ...
 %% ------------------------------------------------------------------
 %  0bis) Soustraction de la baseline matérielle (optionnel)
 %% ------------------------------------------------------------------
+baselineCapture = [];   % réutilisée en section 5 pour le tracé superposé
+baselineFs      = [];
+
 if useBaseline
     if ~isfile(baselineFile)
         warning('Baseline demandée mais fichier introuvable (%s) -> ignorée.', baselineFile);
     else
         Sb = load(baselineFile, 'rxCapture', 'fs');
-        baselineEnv = abs(Sb.rxCapture(:));
+        baselineCapture = Sb.rxCapture(:);
+        baselineFs      = Sb.fs;
+        baselineEnv     = abs(baselineCapture);
         fprintf('      Baseline matérielle (fading désactivé) : coefficient de variation = %.4f\n', ...
             std(baselineEnv)/mean(baselineEnv));
         fprintf('      (doit être largement inférieur à celui mesuré avec fading actif ci-dessous)\n\n');
@@ -211,9 +216,29 @@ t = (0:numel(rxCapture)-1)' / fs;
 rxPower_dB = 20*log10(abs(rxCapture) + eps);
 
 figure('Name', 'RX réel - Puissance vs temps', 'Position', [50 620 1830 350]);
-plot(t, rxPower_dB, 'b'); grid on;
+plot(t, rxPower_dB, 'b', 'DisplayName', 'Fading actif'); hold on; grid on;
+
+if ~isempty(baselineCapture)
+    % Recale la baseline sur son propre axe temporel (durées potentiellement différentes)
+    t_bl = (0:numel(baselineCapture)-1)' / baselineFs;
+    bl_dB = 20*log10(abs(baselineCapture) + eps);
+
+    % Recentre la baseline sur le niveau moyen de la capture avec fading,
+    % pour comparer la VARIABILITÉ des deux traces plutôt que leur gain
+    % absolu (qui peut différer légèrement entre les deux runs).
+    bl_dB_aligned = bl_dB - mean(bl_dB) + mean(rxPower_dB);
+
+    plot(t_bl, bl_dB_aligned, 'Color', [0.5 0.5 0.5], 'DisplayName', ...
+        'Baseline (fading désactivé, recentrée sur le même niveau moyen)');
+end
+
 xlabel('Temps (s)'); ylabel('Puissance RX (dB, échelle relative)');
 title('Trace temporelle de la puissance RX : inspection visuelle des creux de fade');
+legend('Location', 'best');
+if ~isempty(baselineCapture)
+    fprintf('      (Trace grise = baseline recentrée sur le même niveau moyen : ');
+    fprintf('elle doit rester nettement plus plate que la trace bleue.)\n\n');
+end
 
 fprintf('=== Fin de l''analyse ===\n');
 
