@@ -25,7 +25,7 @@ SamplesPerFrame = 16384;                                            % 4096 in DC
 delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableFading = true;
+enableFading = False;
 enableTumble = false;               % Enable simulated tumbling of satellite
 
 % Configure Fading Parameters
@@ -229,7 +229,7 @@ effectIndex = 1;
 last_hardware_db = -1;     
 loopTimer = tic;
 
-% TEST (2 lignes) :
+% TEST capture :
 estimatedFrames = ceil(channelProfile(end,1) * fs / SamplesPerFrame) + 100; % marge de sécurité
 rxCapture = complex(zeros(SamplesPerFrame*estimatedFrames, 1));
 captureIdx = 1;
@@ -318,7 +318,7 @@ fprintf("End of Maximum Attenuation. \n")
 K_nominal = K;
 fadeRate_nominal = fadeRate;
 rxCapture = rxCapture(1:captureIdx-1);
-save('rxCapture_test.mat', 'rxCapture', 'fs', 'K_nominal', 'fadeRate_nominal', '-v7.3');
+save('rxCapture_baseline.mat', 'rxCapture', 'fs', 'K_nominal', 'fadeRate_nominal', '-v7.3');
 %%%%%
 
 % Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
