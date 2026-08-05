@@ -21,8 +21,8 @@ DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCET
 fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
 delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
-SamplesPerFrame = 16384;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
-delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
+SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
+%delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
 enableFading = false;
@@ -242,11 +242,9 @@ while (effectIndex <= totalPoints)
     rx_data = SDR_RX();
 
     %% TEST : capture du signal RÉELLEMENT REÇU par le hardware
-    % (correction : auparavant ce bloc capturait tx_data -- le signal
-    %  encore côté logiciel AVANT transmission -- ce qui ne testait que
-    %  comm.RicianChannel() et jamais la chaîne RF physique)
+    %Copy the 4,096 samples received into the next free section of rxCapture:
     rxCapture(captureIdx:captureIdx+SamplesPerFrame-1) = rx_data;
-    captureIdx = captureIdx + SamplesPerFrame;
+    captureIdx = captureIdx + SamplesPerFrame;        % where to write the next data block (SamplesPerFrame)
     %%%%
 
     % === TEST TEMPORAIRE : signal CW constant à ÉMETTRE, pour isoler le

@@ -255,49 +255,96 @@ fprintf('\n');
 %% ------------------------------------------------------------------
 %  5) Trace de puissance RX vs temps (inspection visuelle des fades)
 %% ------------------------------------------------------------------
-t = (0:numel(rxCapture)-1)' / fs;
-rxPower_dB = 20*log10(abs(rxCapture) + eps);
+% t = (0:numel(rxCapture)-1)' / fs;
+% rxPower_dB = 20*log10(abs(rxCapture) + eps);
+% 
+% figure('Name', 'RX réel - Puissance vs temps', 'Position', [50 620 1830 350]);
+% plot(t, rxPower_dB, 'b', 'DisplayName', 'Fading actif'); hold on; grid on;
+% 
+% if ~isempty(baselineCapture)
+%     % Recale la baseline sur son propre axe temporel (durées potentiellement différentes)
+%     t_bl = (0:numel(baselineCapture)-1)' / baselineFs;
+%     bl_dB = 20*log10(abs(baselineCapture) + eps);
+% 
+%     % Recentre la baseline sur le niveau moyen de la capture avec fading,
+%     % pour comparer la VARIABILITÉ des deux traces plutôt que leur gain
+%     % absolu (qui peut différer légèrement entre les deux runs).
+%     bl_dB_aligned = bl_dB - mean(bl_dB) + mean(rxPower_dB);
+% 
+%     plot(t_bl, bl_dB_aligned, 'Color', [0.5 0.5 0.5], 'DisplayName', ...
+%         'Baseline (fading désactivé, recentrée sur le même niveau moyen)');
+% 
+%     % --- Diagnostic quantitatif : ratio des écarts-types ---
+%     std_fading   = std(rxPower_dB);
+%     std_baseline = std(bl_dB);
+%     stdRatio     = std_fading / std_baseline;
+% 
+%     fprintf('      std(puissance dB) fading actif : %.2f dB\n', std_fading);
+%     fprintf('      std(puissance dB) baseline      : %.2f dB\n', std_baseline);
+%     fprintf('      Ratio std(fading)/std(baseline) : %.2f\n', stdRatio);
+%     if stdRatio < 2
+%         fprintf(['      -> ATTENTION : ratio proche de 1 -> le fading n''est PAS distinguable\n' ...
+%             '         du bruit matériel. Le test n''est pas valide en l''état.\n\n']);
+%     elseif stdRatio < 5
+%         fprintf(['      -> Ratio modeste (2-5x) : le fading est visible mais reste proche du\n' ...
+%             '         bruit matériel. Résultat à interpréter avec prudence.\n\n']);
+%     else
+%         fprintf(['      -> OK : ratio >= 5x, le fading domine nettement le bruit matériel.\n\n']);
+%     end
+% end
+% 
+% xlabel('Temps (s)'); ylabel('Puissance RX (dB, échelle relative)');
+% title('Trace temporelle de la puissance RX : inspection visuelle des creux de fade');
+% legend('Location', 'best');
+% 
+% fprintf('=== Fin de l''analyse ===\n');
 
-figure('Name', 'RX réel - Puissance vs temps', 'Position', [50 620 1830 350]);
-plot(t, rxPower_dB, 'b', 'DisplayName', 'Fading actif'); hold on; grid on;
 
+%% Modification power computation
+%% ================================
+% 5) Inspection du fading temporel
+%% ================================
+
+fprintf('[4/4] Vérification du fading temporel sur enveloppe lissée...\n');
+
+% Fenêtre de lissage
+L = max(1000, round(0.1 * Tc * fs));
+
+% Puissance moyenne glissante
+%blEnv = movmean(abs(baselineCapture).^2, L);
+rxEnv = movmean(abs(rxCapture).^2, L);
 if ~isempty(baselineCapture)
-    % Recale la baseline sur son propre axe temporel (durées potentiellement différentes)
-    t_bl = (0:numel(baselineCapture)-1)' / baselineFs;
-    bl_dB = 20*log10(abs(baselineCapture) + eps);
-
-    % Recentre la baseline sur le niveau moyen de la capture avec fading,
-    % pour comparer la VARIABILITÉ des deux traces plutôt que leur gain
-    % absolu (qui peut différer légèrement entre les deux runs).
-    bl_dB_aligned = bl_dB - mean(bl_dB) + mean(rxPower_dB);
-
-    plot(t_bl, bl_dB_aligned, 'Color', [0.5 0.5 0.5], 'DisplayName', ...
-        'Baseline (fading désactivé, recentrée sur le même niveau moyen)');
-
-    % --- Diagnostic quantitatif : ratio des écarts-types ---
-    std_fading   = std(rxPower_dB);
-    std_baseline = std(bl_dB);
-    stdRatio     = std_fading / std_baseline;
-
-    fprintf('      std(puissance dB) fading actif : %.2f dB\n', std_fading);
-    fprintf('      std(puissance dB) baseline      : %.2f dB\n', std_baseline);
-    fprintf('      Ratio std(fading)/std(baseline) : %.2f\n', stdRatio);
-    if stdRatio < 2
-        fprintf(['      -> ATTENTION : ratio proche de 1 -> le fading n''est PAS distinguable\n' ...
-            '         du bruit matériel. Le test n''est pas valide en l''état.\n\n']);
-    elseif stdRatio < 5
-        fprintf(['      -> Ratio modeste (2-5x) : le fading est visible mais reste proche du\n' ...
-            '         bruit matériel. Résultat à interpréter avec prudence.\n\n']);
-    else
-        fprintf(['      -> OK : ratio >= 5x, le fading domine nettement le bruit matériel.\n\n']);
-    end
+    blEnv = movmean(abs(baselineCapture).^2, L);
 end
 
-xlabel('Temps (s)'); ylabel('Puissance RX (dB, échelle relative)');
-title('Trace temporelle de la puissance RX : inspection visuelle des creux de fade');
-legend('Location', 'best');
+% Passage en dB
+rxPower_dB = 10*log10(rxEnv + eps);
+blPower_dB = 10*log10(blEnv + eps);
 
-fprintf('=== Fin de l''analyse ===\n');
+% Suppression de l'offset moyen
+rxPower_dB = rxPower_dB - mean(rxPower_dB);
+blPower_dB = blPower_dB - mean(blPower_dB);
+
+stdFading = std(rxPower_dB);
+stdBaseline = std(blPower_dB);
+
+%fprintf('      std(baseline)     : %.2f dB\n',stdBaseline);
+%fprintf('      Ratio             : %.2f\n',stdFading/stdBaseline);
+fprintf('      std(fading actif) : %.2f dB\n', stdFading);
+if ~isempty(baselineCapture)
+    fprintf('      std(baseline)     : %.2f dB\n', stdBaseline);
+    fprintf('      Ratio             : %.2f\n', stdFading/stdBaseline);
+end
+
+figure;
+plot((0:length(rxPower_dB)-1)/fs,rxPower_dB)
+hold on
+plot((0:length(blPower_dB)-1)/fs,blPower_dB)
+grid on
+xlabel('Temps (s)')
+ylabel('Amplitude (dB)')
+legend('Fading actif','Baseline')
+title('Enveloppe moyenne')
 
 %% ====================================================================
 %  Fonctions locales (identiques à test_RicianFading.m)
