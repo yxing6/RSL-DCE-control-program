@@ -75,8 +75,25 @@ clear; clc; close all;
 %% ------------------------------------------------------------------
 %  Paramètres : chemins des fichiers de capture à analyser
 %% ------------------------------------------------------------------
-captureFile  = 'rxCapture_test.mat';       % capture avec fading actif
+% Laissez captureFile vide ('') pour que le script prenne automatiquement
+% le fichier rxCapture_test_*.mat le plus récent du dossier courant
+% (le script de capture nomme désormais ses fichiers avec K, fadeRate et
+% un horodatage -- voir Capture_hardwareLink_wFading.m). Renseignez un nom
+% explicite ici si vous voulez forcer l'analyse d'une capture précise.
+captureFile  = '';
 baselineFile = 'rxCapture_baseline.mat';   % capture sans fading (optionnel mais recommandé)
+
+if isempty(captureFile)
+    d = dir('rxCapture_test_*.mat');
+    if isempty(d)
+        error(['Aucun fichier rxCapture_test_*.mat trouvé dans le dossier courant.\n' ...
+            'Voir le bloc SETUP en haut de ce script pour générer une capture ' ...
+            '(enableFading=true) depuis Capture_hardwareLink_wFading.m.']);
+    end
+    [~, iLatest] = max([d.datenum]);
+    captureFile = d(iLatest).name;
+    fprintf('Aucun captureFile spécifié -> utilisation du plus récent : %s\n', captureFile);
+end
 
 % La baseline est utilisée automatiquement si le fichier existe.
 % (Plus besoin de mettre un flag à true à la main -- source du problème
@@ -213,8 +230,18 @@ title('Spectre Doppler mesuré sur le signal RX réel'); legend('Location', 'bes
 
 df = freq(2) - freq(1);
 inBand = freq >= -fadeRate_nominal & freq <= fadeRate_nominal;
+nBinsInBand = sum(inBand);
 fracInBand = 100 * sum(pxx(inBand)) * df / (sum(pxx) * df);
-fprintf('      Puissance mesurée dans +/-%.1f Hz : %.1f %%\n\n', fadeRate_nominal, fracInBand);
+fprintf('      Puissance mesurée dans +/-%.1f Hz : %.1f %%\n', fadeRate_nominal, fracInBand);
+fprintf('      Résolution FFT : nfft=%d, df=%.4f Hz, nb bins dans la bande [-%.1f, +%.1f] Hz = %d\n', ...
+    nfft, df, fadeRate_nominal, fadeRate_nominal, nBinsInBand);
+if nBinsInBand <= 2
+    fprintf(['      -> ATTENTION : la bande contient très peu de bins FFT (%d). Le ratio %%%%\n' ...
+        '         mesuré est peu fiable et peut rester quasi constant d''un run à l''autre\n' ...
+        '         indépendamment du vrai fadeRate/K -- augmentez la durée de capture (donc nfft)\n' ...
+        '         ou diminuez fs, sinon ce chiffre ne discrimine pas vraiment vos runs.\n'], nBinsInBand);
+end
+fprintf('\n');
 
 %% ------------------------------------------------------------------
 %  5) Trace de puissance RX vs temps (inspection visuelle des fades)
@@ -237,15 +264,29 @@ if ~isempty(baselineCapture)
 
     plot(t_bl, bl_dB_aligned, 'Color', [0.5 0.5 0.5], 'DisplayName', ...
         'Baseline (fading désactivé, recentrée sur le même niveau moyen)');
+
+    % --- Diagnostic quantitatif : ratio des écarts-types ---
+    std_fading   = std(rxPower_dB);
+    std_baseline = std(bl_dB);
+    stdRatio     = std_fading / std_baseline;
+
+    fprintf('      std(puissance dB) fading actif : %.2f dB\n', std_fading);
+    fprintf('      std(puissance dB) baseline      : %.2f dB\n', std_baseline);
+    fprintf('      Ratio std(fading)/std(baseline) : %.2f\n', stdRatio);
+    if stdRatio < 2
+        fprintf(['      -> ATTENTION : ratio proche de 1 -> le fading n''est PAS distinguable\n' ...
+            '         du bruit matériel. Le test n''est pas valide en l''état.\n\n']);
+    elseif stdRatio < 5
+        fprintf(['      -> Ratio modeste (2-5x) : le fading est visible mais reste proche du\n' ...
+            '         bruit matériel. Résultat à interpréter avec prudence.\n\n']);
+    else
+        fprintf(['      -> OK : ratio >= 5x, le fading domine nettement le bruit matériel.\n\n']);
+    end
 end
 
 xlabel('Temps (s)'); ylabel('Puissance RX (dB, échelle relative)');
 title('Trace temporelle de la puissance RX : inspection visuelle des creux de fade');
 legend('Location', 'best');
-if ~isempty(baselineCapture)
-    fprintf('      (Trace grise = baseline recentrée sur le même niveau moyen : ');
-    fprintf('elle doit rester nettement plus plate que la trace bleue.)\n\n');
-end
 
 fprintf('=== Fin de l''analyse ===\n');
 

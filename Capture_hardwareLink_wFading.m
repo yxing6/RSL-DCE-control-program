@@ -318,7 +318,19 @@ fprintf("End of Maximum Attenuation. \n")
 K_nominal = K;
 fadeRate_nominal = fadeRate;
 rxCapture = rxCapture(1:captureIdx-1);
-save('rxCapture_baseline.mat', 'rxCapture', 'fs', 'K_nominal', 'fadeRate_nominal', '-v7.3');
+
+% Nom de fichier dépendant de enableFading : évite d'écraser une capture
+% par l'autre (bug précédent : le nom était figé sur 'rxCapture_baseline.mat'
+% quelle que soit la valeur de enableFading).
+if enableFading
+    outFile = sprintf('rxCapture_test_K%g_fd%g_%s.mat', ...
+        K_nominal, fadeRate_nominal, datestr(now, 'yyyymmdd_HHMMSS'));
+else
+    outFile = 'rxCapture_baseline.mat';
+end
+save(outFile, 'rxCapture', 'fs', 'K_nominal', 'fadeRate_nominal', '-v7.3');
+fprintf('Capture sauvegardée dans : %s\n', outFile);
+fprintf('  enableFading=%d, K_nominal=%g, fadeRate_nominal=%g\n', enableFading, K_nominal, fadeRate_nominal);
 %%%%%
 
 % Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
