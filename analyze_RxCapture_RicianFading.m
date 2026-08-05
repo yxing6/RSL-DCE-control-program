@@ -77,7 +77,11 @@ clear; clc; close all;
 %% ------------------------------------------------------------------
 captureFile  = 'rxCapture_test.mat';       % capture avec fading actif
 baselineFile = 'rxCapture_baseline.mat';   % capture sans fading (optionnel mais recommandé)
-useBaseline  = false;   % passer à true si baselineFile existe et doit être utilisé
+
+% La baseline est utilisée automatiquement si le fichier existe.
+% (Plus besoin de mettre un flag à true à la main -- source du problème
+%  précédent : useBaseline était resté à false alors que le fichier existait.)
+useBaseline = isfile(baselineFile);
 
 %% ------------------------------------------------------------------
 %  0) Chargement de la capture RX réelle
@@ -108,17 +112,20 @@ baselineCapture = [];   % réutilisée en section 5 pour le tracé superposé
 baselineFs      = [];
 
 if useBaseline
-    if ~isfile(baselineFile)
-        warning('Baseline demandée mais fichier introuvable (%s) -> ignorée.', baselineFile);
-    else
-        Sb = load(baselineFile, 'rxCapture', 'fs');
-        baselineCapture = Sb.rxCapture(:);
-        baselineFs      = Sb.fs;
-        baselineEnv     = abs(baselineCapture);
-        fprintf('      Baseline matérielle (fading désactivé) : coefficient de variation = %.4f\n', ...
-            std(baselineEnv)/mean(baselineEnv));
-        fprintf('      (doit être largement inférieur à celui mesuré avec fading actif ci-dessous)\n\n');
-    end
+    Sb = load(baselineFile, 'rxCapture', 'fs');
+    baselineCapture = Sb.rxCapture(:);
+    baselineFs      = Sb.fs;
+    baselineEnv     = abs(baselineCapture);
+    fprintf('      Baseline trouvée (%s) : %d échantillons chargés, fs=%g Hz.\n', ...
+        baselineFile, numel(baselineCapture), baselineFs);
+    fprintf('      Baseline matérielle (fading désactivé) : coefficient de variation = %.4f\n', ...
+        std(baselineEnv)/mean(baselineEnv));
+    fprintf('      (doit être largement inférieur à celui mesuré avec fading actif ci-dessous)\n\n');
+else
+    fprintf(['      Pas de fichier baseline (%s) trouvé dans le dossier courant.\n' ...
+        '      -> Le graphe de la section 5 n''affichera que la trace avec fading actif.\n' ...
+        '      -> Générez une capture sans fading (voir SETUP point 5) et placez-la\n' ...
+        '         dans le même dossier que ce script pour activer la comparaison.\n\n'], baselineFile);
 end
 
 %% ------------------------------------------------------------------
