@@ -217,7 +217,16 @@ end
 fprintf('[4/4] Vérification du spectre Doppler mesuré sur le RX réel...\n');
 
 rx_ac = rxCapture - mean(rxCapture);
-nfft = min(4096, 2^nextpow2(numel(rx_ac)/8));
+
+% Résolution FFT adaptative : le plafond fixe précédent (nfft=4096) donnait
+% df=244 Hz avec fs=1 MHz, soit 1 seul bin dans la bande +/-5 Hz -- bien
+% trop grossier pour discriminer quoi que ce soit d'un run à l'autre.
+% On vise ici au moins ~10 bins dans la bande +/-fadeRate_nominal.
+target_df   = max(fadeRate_nominal / 10, 0.01);           % Hz
+nfft_target = 2^nextpow2(fs / target_df);
+nfft_maxData = 2^nextpow2(numel(rx_ac) / 8);               % garde assez de segments pour moyenner (pwelch)
+nfft_cap    = 2^22;                                          % plafond raisonnable pour le calcul/mémoire
+nfft = min([nfft_target, nfft_maxData, nfft_cap]);
 [pxx, freq] = pwelch(rx_ac, hamming(nfft), nfft/2, nfft, fs, 'centered');
 
 figure('Name', 'RX réel - Spectre Doppler', 'Position', [980 50 900 500]);

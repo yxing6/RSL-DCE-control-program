@@ -238,9 +238,20 @@ captureIdx = 1;
 while (effectIndex <= totalPoints)
 
     % Pull a live RF data frame from the USRP Receiver
+    % (SIGNAL RÉEL REÇU après passage par TX -> atténuateur -> RX)
     rx_data = SDR_RX();
-    % === TEST TEMPORAIRE : validation du fading, signal CW constant ===
-    rx_data = ones(SamplesPerFrame, 1);
+
+    %% TEST : capture du signal RÉELLEMENT REÇU par le hardware
+    % (correction : auparavant ce bloc capturait tx_data -- le signal
+    %  encore côté logiciel AVANT transmission -- ce qui ne testait que
+    %  comm.RicianChannel() et jamais la chaîne RF physique)
+    rxCapture(captureIdx:captureIdx+SamplesPerFrame-1) = rx_data;
+    captureIdx = captureIdx + SamplesPerFrame;
+    %%%%
+
+    % === TEST TEMPORAIRE : signal CW constant à ÉMETTRE, pour isoler le
+    % fading pur au niveau du RX (ne touche plus à rx_data ci-dessus) ===
+    txSourceSignal = ones(SamplesPerFrame, 1);
     % === FIN TEST — à retirer/commenter après validation ===
 
 
@@ -258,15 +269,11 @@ while (effectIndex <= totalPoints)
     calibrated_delay = max(current_delay - delaySDR, 0);
     % Subtract freqOffsetHz to Obtain Desired Center Frequency
     [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs, ricianChan);
-
-    %% TEST :
-    rxCapture(captureIdx:captureIdx+SamplesPerFrame-1) = tx_data;
-    captureIdx = captureIdx + SamplesPerFrame;
-    %%%%
+        txSourceSignal, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs, ricianChan);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
+
 
     % Update Parameters (slower than the live RF pull)
     if (channelProfile(effectIndex, 1) <= toc(loopTimer))
