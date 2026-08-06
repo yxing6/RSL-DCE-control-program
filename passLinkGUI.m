@@ -83,7 +83,7 @@ function passLinkGUI
     gsLonField = uieditfield(g1, 'numeric', 'Value', -123.2460, 'Limits', [-180 180]);
     gsLonField.Layout.Row = row; gsLonField.Layout.Column = [2 3];
 
-    % --- Min elevation ---
+    % --- Min elevation angle ---
     row = row + 1;
     uilabel(g1, 'Text', 'Min Elevation Angle (deg):');
     minElevField = uieditfield(g1, 'numeric', 'Value', 10.0, 'Limits', [0 90]);
@@ -128,13 +128,12 @@ function passLinkGUI
     g2.RowSpacing = 6;
 
     infoLabel = uilabel(g2, 'Text', ...
-        ['These options enable/disable the sub-plots displayed in real-time' ...
-        'by hardwareLink.m, which open in a separate window. The script requires' ...
-        'a programmable attenuator and a SDR to be connected.']);
+        ['These options enable/disable the sub-plots displayed in real-time.' ...
+        'The script requires a programmable attenuator and a SDR to be connected.']);
     infoLabel.WordWrap = 'on';
     infoLabel.Layout.Row = 1; infoLabel.Layout.Column = [1 2];
 
-    lbl = uilabel(g2, 'Text', 'COM Port:');
+    lbl = uilabel(g2, 'Text', 'COM Port:');     % change name port if MAC and not windows
     lbl.Layout.Row = 2;
     lbl.Layout.Column = 1;
     % Detect available COM ports
