@@ -1,22 +1,25 @@
-%% Programmable Attenuator and SDR Link
+%% Hardware Link
 
-% --- Plot visibility toggles -------------------------------------------
-% These can be pre-set in the base workspace by passLinkGUI.m before this
-% script is run (e.g. assignin('base','showRangePlot',false)). If they are
-% not already defined (e.g. running this script directly), they default
-% to true
+% This script takes the selected channel effect output values of runPassPrediction.m and instructs 
+% the Programmable Attenuator and Software Defined Radio to modify the RF signal accordingly. 
+% This script also includes various data visualisation features such as live plots and printouts. 
+% This script also includes several sections required for proper interfacing with passLinkGUI.m, 
+% which facilitates GUI-control of the program. 
 
+
+% Plot Visibility Toggles 
+    % These can be pre-set in the base workspace by passLinkGUI.m before this
+    % script is run (e.g. assignin('base','showRangePlot',false)). If they are
+    % not already defined (e.g. running this script directly), they default to true.
 if ~exist('carrierFreq',    'var'), carrierFreq = 435e6; end
 if ~exist('comPort', 'var'), comPort = "COM3"; end
-
 if ~exist('showRangePlot',    'var'), showRangePlot    = true; end
 if ~exist('showPathLossPlot', 'var'), showPathLossPlot = true; end
 if ~exist('showDelayPlot',    'var'), showDelayPlot    = true; end
 if ~exist('showDopplerPlot',  'var'), showDopplerPlot  = true; end
-if ~exist('enableFading','var'), enableFading = true; end
+if ~exist('enableFadingToggle','var'), enableFadingToggle = true; end
 if ~exist('enableTumbleToggle','var'), enableTumbleToggle = false; end
-
-% Tumbling sub-parameters (set by passLinkGUI.m; defaults match tumbling_attenuation.m)
+    % Tumbling sub-parameters (also pre-set by passLinkGUI.m; defaults match tumbling_attenuation.m)
 if ~exist('tumbleTestCase',           'var'), tumbleTestCase           = "stable"; end
 if ~exist('tumbleSatDimensions',      'var'), tumbleSatDimensions      = [0.1 0.1 0.3]; end
 if ~exist('tumbleMass',               'var'), tumbleMass               = 4; end
@@ -25,46 +28,42 @@ if ~exist('tumbleAntennaOrientation', 'var'), tumbleAntennaOrientation = "+X"; e
 if ~exist('tumbleDishRadius',         'var'), tumbleDishRadius         = 0.05; end
 if ~exist('tumbleShowPlots',          'var'), tumbleShowPlots          = false; end
 
-
-% Release SDR if crashes
+% Release SDR in Case of Crashes
 if exist('SDR_RX', 'var')
     try release(SDR_RX); catch, end
 end
 if exist('SDR_TX', 'var')
     try release(SDR_TX); catch, end
 end
-
-% clearvars so the toggles set above (or by the GUI)
-% survive the workspace cleanup
 clearvars -except carrierFreq comPort showRangePlot showPathLossPlot showDelayPlot showDopplerPlot ...
     enableFading enableTumbleToggle tumbleTestCase tumbleSatDimensions tumbleMass ...
     tumbleAntennaType tumbleAntennaOrientation tumbleDishRadius tumbleShowPlots
 clc;
 
 % Define Programmable Attenuator Parameters
-att_port = comPort;                                                        
-att_baudrate = 115200;       
+att_port = comPort;                         % Specific port needs to be checked on a per-device basis                                           
+att_baudrate = 115200;                      
 test_channel = 1;
 
 % Initialise Programmable Attenuator
 fprintf("Opening serial connection to attenuator on %s...\n", att_port);
 att = initProgATT(att_port, att_baudrate);
 
-% Define SDR parameters
+% Define SDR Parameters
 Platform = "B210";
 SerialNum = "32418F5";
-ChannelMapping = 1;
-CenterFrequency = carrierFreq;            % 435 MHz Carrier Frequency
-MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
-fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
+ChannelMapping = 1;                         % Can be changed; RX and TX can also be split between different channels
+CenterFrequency = carrierFreq;              % 435 MHz carrier frequency (for ground station segment of the DCE)
+MasterClockRate = 32e6;                                             
+DecimationFactor = 32; InterpolationFactor = DecimationFactor;     
+fs = MasterClockRate / DecimationFactor;    % 1 MSPS Sample Rate
 rxGain = 25; txGain = 50;
-delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
-SamplesPerFrame = 16384;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
-delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
+delayBuffer = zeros(256e3,1);               % Memory array for time-delay emulation
+SamplesPerFrame = 4096;                     
 phaseOffset = 0.0;
 OutputDataType = "double"; 
-enableTumble = enableTumbleToggle;  % Enable simulated tumbling of satellite (set via GUI, defaults to false)
+enableFading = enableFadingToggle;          % Enable simulated fading effects 
+enableTumble = enableTumbleToggle;          % Enable simulated tumbling of satellite (set via GUI, defaults to false)
 
 % Initialize USRP RX and TX System Objects
 disp("Initializing USRP SDR Hardware...");
@@ -74,10 +73,10 @@ disp("Initializing USRP SDR Hardware...");
 
 % Configure Fading Parameters
 if enableFading
-    K = 10; % Default 10, typical for SatCom
-    fadeRate = 5; % Slow-varying fading
+    K = 10;                                 % Default 10, typical for satellite communications
+    fadeRate = 5;                           % Slow-varying fading
 else
-    K = 1e50; % negligible fade
+    K = 1e50;                               % Negligible fading
     fadeRate = 0;
 end
 ricianChan = comm.RicianChannel( ...
@@ -96,38 +95,36 @@ cleanupAtt = onCleanup(@() clear('att'));
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
 
-% Synchronize B210 & Signal generator 
-% Verify External 10 MHz Reference Lock Before Proceeding
+% Synchronize B210 & Signal generator, Verify External 10 MHz Reference Lock Before Proceeding
 disp("Checking external 10 MHz reference lock...");
 pause(1);                                   % Give the radio a moment to attempt lock after object creation
-if ~referenceLockedStatus(SDR_RX)           % SDR_RX & TX share the same clock
+if ~referenceLockedStatus(SDR_RX)           % SDR_RX and TX share the same clock
     error("SDR_RX is not locked to the external 10 MHz reference. Check REF OUT -> REF IN cabling and that the signal generator's reference output is enabled.");
 end
 disp("External reference locked successfully.");
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
-flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 10);
+flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 3);
 
 % Import Path from CSV
 [file, path] = uigetfile('*.csv', 'Select a CSV File');
 if isequal(file, 0)
     error("No CSV file selected.");
 end
-thisFile = fullfile(path, file);
+thisFile = fullfile(path, file);            
 fprintf('Reading %s...\n', file);
-csv_table = readtable(thisFile);    % CSV data
+csv_table = readtable(thisFile);            % Tabulates pass file data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
-% Set Up Pass Data Visualisation (Live Plot)
+% Set Up Pass Data Visualisation (Live Plots)
     % Column mapping confirmed from CSV header:
     % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
 markerSize = 10;
-
-% Build the ordered list of enabled plots based on the toggles above
-% (and enableTumble, which gates the tumble plot regardless of the toggle
-% since there is no tumble data unless enableTumble is true).
+    % Build the ordered list of enabled plots based on the toggles above
+    % (and enableTumble, which gates the tumble plot regardless of the toggle
+    % since there is no tumble data unless enableTumble is true).
 plotKeys    = {};
 plotTitles  = {};
 plotYLabels = {};
@@ -162,8 +159,7 @@ if numPlots == 0
     error("At least one plot must be enabled (showRangePlot, showPathLossPlot, showDelayPlot or showDopplerPlot).");
 end
 
-% Single dashboard window: scrolling data table on the left,
-% the selected live plots on the right.
+    % Single Dashboard Window: Scrolling data table on the left, the selected live plots on the right.
 liveFig = uifigure('Name', 'Live Pass Metrics', 'Position', [100, 100, 1400, 750]);
 
 leftPanel  = uipanel(liveFig, 'Title', 'Live Data Table', ...
@@ -179,7 +175,7 @@ liveTable = uitable(leftPanel, 'Units', 'normalized', 'Position', [0 0 1 1], ...
 tl = tiledlayout(rightPanel,numPlots,1);
 liveTitle = sgtitle(tl, 'Live playback of recorded pass data');
 
-% Create one tile per enabled plot and keep handles in maps keyed by plotKeys
+    % Create one tile per enabled plot and keep handles in maps keyed by plotKeys.
 axMap   = containers.Map();
 plotMap = containers.Map();
 for k = 1:numPlots
@@ -194,8 +190,8 @@ for k = 1:numPlots
 end
 
 % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
-totalPoints = height(csv_table);
-channelProfile = zeros(totalPoints, 4);     % Columns: 1=Time, 2=Atten, 3=Delay, 4=Doppler
+totalPoints = height(csv_table);            % Number of data points in the pass file
+channelProfile = zeros(totalPoints, 4);     % Columns: 1 = Time, 2 = Attenuation, 3 = Time Delay, 4 = Doppler Shift
 
 % Buffer for the scrolling table (same rows printed to the command window)
 tableData = nan(totalPoints, numel(tableColumnNames));
@@ -204,14 +200,15 @@ tableData = nan(totalPoints, numel(tableColumnNames));
 raw_times = datetime(csv_table{:, 1}); 
 channelProfile(:,1) = seconds(raw_times - raw_times(1)); 
 
-% Extract Attenuation From Column E (Column 5)
+% Extract Attenuation From Column E (Column 5) of the Pass File
 channelProfile(:,2) = csv_table{:, 5};
+channelProfile(:,2) = 130*ones(size(csv_table{:, 5}));                    % Enable for Testing                   
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
 
 % Normalise Dynamic Attenuation Control by In-line Losses 
-fixed_att = 125;            
+fixed_att = 125;                            % Attenuation from fixed attenuators in the hardware chain
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
 % Generate CANX-2 Tumbling Attenuation Profile
@@ -227,26 +224,25 @@ if enableTumble
         DishRadius=tumbleDishRadius, ...
         ShowPlots=tumbleShowPlots);
     tumble_att_dB = tumbleComponents.pointing_loss_dB;
-
     % Add Attenuation from Tumbling
     channelProfile(:,2) = channelProfile(:,2) + tumble_att_dB;
 end
 
-% Extract Pre-Calculated Delay From Column F (Column 6)
+% Extract Pre-Calculated Delay From Column F (Column 6) of the Pass File
 channelProfile(:,3) = csv_table{:, 6};                                         
-% channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
+% channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off For Testing                                        
 
-% Extract Pre-Calculated Doppler Shift From Column G (Column 7)
+% Extract Pre-Calculated Doppler Shift From Column G (Column 7) of the Pass File
 channelProfile(:,4) = csv_table{:, 7};
-% channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
+% channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off For Testing
 
 % Columns Used for Live Plot
-range_col    = csv_table{:, 2} / 1000;   % Range_m -> km
-pathloss_col = csv_table{:, 5};          % PathLoss_dB
-delay_col    = csv_table{:, 6} * 1000;   % Delay_s -> ms
-doppler_col  = csv_table{:, 7} / 1000;   % Doppler_Hz -> kHz
+range_col    = csv_table{:, 2} / 1000;   % Range_m -> km      unit conversion
+pathloss_col = csv_table{:, 5};          % PathLoss_dB        units
+delay_col    = csv_table{:, 6} * 1000;   % Delay_s -> ms      unit conversion
+doppler_col  = csv_table{:, 7} / 1000;   % Doppler_Hz -> kHz  unit conversion
 
-% Map of column data per plot key, used both for fixed Y-limits and live updates
+% Map of Column Data per Plot Key, Used both for Fixed Y-limits and Live Updates
 dataMap = containers.Map();
 dataMap('range')    = range_col;
 dataMap('pathloss') = pathloss_col;
@@ -265,13 +261,12 @@ set(liveTitle, 'String', sprintf('Live playback — %s', csv_filename));
 for k = 1:numPlots
     set(plotMap(plotKeys{k}), 'XData', NaT, 'YData', NaN);
 end
-
 axList = cellfun(@(k) axMap(k), plotKeys, 'UniformOutput', false);
 axArray = [axList{:}];
 xlim(axArray, [raw_times(1), raw_times(end)]);
 linkaxes(axArray, 'x');
 
-% Fix the Plot Y-axes for the Entire Duration of the Plot (based on the values from CSV)
+% Fix the Plot Y-axes for the Entire Duration of the Plot (based on the values from pass file)
 for k = 1:numPlots
     key = plotKeys{k};
     setFixedYLim(axMap(key), dataMap(key));
@@ -281,33 +276,30 @@ drawnow;
 % Reset to Maximum Attenuation
 fprintf("Start of Maximum Attenuation... \n")
 setAttenuation(att, test_channel, 95);
-pause(2.5);
+pause(2.5);                                 % Set to high attenuation state for 2.5 s to simulate the 2.5 s just before the pass
 fprintf("End of Maximum Attenuation. \n")
 
-% Real-time Effect Application Loop
+% Real-time Channel Effect Application Loop
 disp("Beginning playback loop.");
-effectIndex = 1;
-last_hardware_db = -1;     
+effectIndex = 1;                            % Pass file row index
+last_hardware_db = -1;                      % Tracks attenuation values to ensure only new values are updated in the PA
 loopTimer = tic;
 
 while (effectIndex <= totalPoints)
 
     % Pull a live RF data frame from the USRP Receiver
-    rx_data = SDR_RX();
+    rx_data = SDR_RX();   
 
     % Extract current parameters from processed profile matrix
     current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
-    current_pathloss  = pathloss_att(effectIndex);
-    current_tumbleatt = tumble_att_dB(effectIndex);
-    current_delay     = channelProfile(effectIndex, 3);
-    current_fShift    = channelProfile(effectIndex, 4);
+    current_pathloss  = pathloss_att(effectIndex);      % path loss attenuation
+    current_tumbleatt = tumble_att_dB(effectIndex);     % tumbling attenuation
+    current_delay     = channelProfile(effectIndex, 3); % time delay
+    current_fShift    = channelProfile(effectIndex, 4); % Doppler shift
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
-    % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
-    calibrated_delay = max(current_delay - delaySDR, 0);
-    % Subtract freqOffsetHz to Obtain Desired Center Frequency
     [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(...
-        rx_data, current_fShift, phaseOffset, calibrated_delay, delayBuffer, SamplesPerFrame, fs, ricianChan);
+        rx_data, current_fShift, phaseOffset, current_delay, delayBuffer, SamplesPerFrame, fs, ricianChan);
 
     % Transmit the modified waveform out of the USRP Transmitter
     SDR_TX(tx_data);
@@ -323,7 +315,7 @@ while (effectIndex <= totalPoints)
             channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, fade_dB, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
-        if current_db ~= last_hardware_db
+        if current_db ~= last_hardware_db           % Ensures that PA attenuation value is only updated if pass file attenuation value changes
                 setAttenuation(att, test_channel, current_db);
                 last_hardware_db = current_db;
         end
@@ -339,19 +331,18 @@ while (effectIndex <= totalPoints)
             set(plotMap(key), 'XData', plot_times(1:effectIndex), 'YData', buf(1:effectIndex));
         end
 
-        % Update the scrolling data table (same values as the console log
-% above). New rows are added at the bottom, and the view auto-scrolls
-% down to keep the latest sample visible.
-tableData(effectIndex,:) = [ ...
-    channelProfile(effectIndex,1), ...
-    current_db, ...
-    current_pathloss, ...
-    current_tumbleatt, ...
-    fade_dB, ...
-    current_delay*1e3, ...
-    current_fShift];
-liveTable.Data = tableData(1:effectIndex,:);
-scroll(liveTable, 'bottom');
+        % Update the scrolling data table (same values as the console log above). 
+        % rows are added at the bottom, and the view auto-scrolls down to keep the latest sample visible.
+        tableData(effectIndex,:) = [ ...
+            channelProfile(effectIndex,1), ...
+            current_db, ...
+            current_pathloss, ...
+            current_tumbleatt, ...
+            fade_dB, ...
+            current_delay*1e3, ...
+            current_fShift];
+        liveTable.Data = tableData(1:effectIndex,:);
+        scroll(liveTable, 'bottom');
 
         drawnow limitrate;
 
@@ -363,15 +354,16 @@ end
 % Reset to Maximum Attenuation
 fprintf("Start of Maximum Attenuation... \n")
 setAttenuation(att, test_channel, 95);
-pause(2.5);
+pause(2.5);                                 % Set to high attenuation state for 2.5 s to simulate the 2.5 s just after the pass
 fprintf("End of Maximum Attenuation. \n")
 
-% Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
+% Release SDR RX/TX (to prevent "Busy" locks and power drops)
 release(SDR_RX);
 release(SDR_TX);
 
 % End / Reset
 clear att;
+clear;
 disp("Dynamic Channel Emulation Complete cleanly.");
 
 
@@ -397,7 +389,8 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6);
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6, ...
+    TimestampMode="high-precision");
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...

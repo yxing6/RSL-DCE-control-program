@@ -1,12 +1,9 @@
 function [components] = tumbling_attenuation(t, freq, options)
-% TUMBLING_ATTENUATION Simulate antenna pointing loss due to CubeSat tumbling.
-%
-% This function simulates the attitude dynamics of a tumbling CubeSat and
-% computes the resulting antenna pointing loss over time. The user can
-% specify the satellite dimensions, mass properties, tumble severity,
-% antenna type, and visualization options. The output includes the
-% time-varying pointing loss along with intermediate attitude and pointing
-% parameters.
+% This function simulates antenna pointing loss due to CubeSat tumbling.
+% It simulates the attitude dynamics of a tumbling CubeSat and computes the resulting antenna 
+% pointing loss over time. The user can specify the satellite dimensions, mass properties, 
+% tumble severity, antenna type, and visualization options. The output includes the time-varying 
+% pointing loss along with intermediate attitude and pointing parameters.
 %
 % INPUTS:
 %   t      - Time vector (s)
@@ -53,7 +50,7 @@ arguments
     options.AntennaType            (1,1) string  = "Half-Wave Dipole"
     options.AntennaOrientation     (1,1) string  = "+X"
 
-    options.DishRadius             (1,1) double = 1;             % m
+    options.DishRadius             (1,1) double = 1;                % m
     options.AttenuationCapDB       (1,1) double  = 60               % dB
 
     options.ShowPlots              (1,1) logical = true
@@ -119,7 +116,6 @@ switch lower(options.TestCase)
 
 end
 
-
 fprintf("\n--- CubeSat Tumbling Simulation ---\n")
 fprintf("Satellite: %s\n", options.SatName)
 fprintf("Scenario: %s\n", options.TestCase)
@@ -129,10 +125,10 @@ fprintf("Antenna: %s (%s mount)\n",...
 fprintf("Frequency: %.2f MHz\n",freq/1e6)
 fprintf("----------------------------------\n\n")
 
-% Initial pointing error as a quatrion
+% Initial Pointing Error as a Quaternion
 q0 = euler2quat(roll0,pitch0,yaw0);
 
-% Initial state
+% Initial State
 state0 = [omega0; q0];
 
 m=options.Mass;
@@ -140,24 +136,24 @@ a=options.SatDimensions(1);
 b=options.SatDimensions(2);
 c=options.SatDimensions(3);
 
-% Calculate principal moments of inertia
-Jx = (1/12)*m*(b^2+c^2); % roll axis, kg*m^2
+% Calculate Principal Moments of Inertia
+Jx = (1/12)*m*(b^2+c^2); % roll axis,  kg*m^2
 Jy = (1/12)*m*(a^2+c^2); % pitch axis, kg*m^2
-Jz = (1/12)*m*(a^2+b^2); % yaw axis, kg*m^2
+Jz = (1/12)*m*(a^2+b^2); % yaw axis,   kg*m^2
 J = [Jx, Jy, Jz]; % Principal moments of inertia vector (assumes off-diagonal elements of the matrix are zero)
 
 % Run Attitude Dynamics
 opts = odeset('RelTol',1e-8,'AbsTol',1e-10);
 [t_ode,state] = ode45(@(t,y) satellite_dynamics(t,y,J), ...
                       [t(1) t(end)], state0, opts);
-% Interpolate attitude solution onto CSV time grid
+% Interpolate Attitude Solution onto CSV Time Grid
 q_ode = state(:,4:7);
 q = zeros(length(t),4);
 for i = 1:4
     q(:,i) = interp1(t_ode, q_ode(:,i), t, 'linear');
 end
 
-% Normalize quaternions
+% Normalize Quaternions
 for k = 1:size(q,1)
     q(k,:) = q(k,:)/norm(q(k,:));
 end
@@ -180,8 +176,7 @@ for k = 1:num_steps
     theta = acos(dot_product);
     off_axis_angle_deg(k) = rad2deg(theta);
 
-    %Calulate gain based on antenna type, user can add unique radiation
-    %patterns for patch, helical etc. antennas
+    % Calulate gain based on antenna type (user can add unique radiation patterns for patch, helical etc. antennas)
     switch lower(options.AntennaType)
         case "half-wave dipole"
             gain = (cos(pi/2*cos(theta))/sin(theta))^2;
@@ -206,12 +201,11 @@ for k = 1:num_steps
             gain = max(gain,10^(-options.AttenuationCapDB/10));
             pointing_loss_dB(k) = -10*log10(gain);
     end
-
 end
 
-%% Plot Antenna Pattern
+%% Plot Antenna Pattern Visualisation
 
-% Radiation pattern
+% Radiation Pattern
 switch lower(options.AntennaType)
     case "half-wave dipole"
         theta_plot = linspace(0,pi,100);
@@ -236,13 +230,13 @@ end
 gain_plot(~isfinite(gain_plot)) = 0;
 gain_plot = gain_plot/max(gain_plot(:));
 
-% Convert gain to radius
+% Convert Gain to Radius
 rho = sqrt(gain_plot);
 X = rho.*sin(theta_plot).*cos(phi_plot);
 Y = rho.*sin(theta_plot).*sin(phi_plot);
 Z = rho.*cos(theta_plot);
 
-% Rotate +Z antenna axis to actual mounting direction
+% Rotate +Z Antenna Axis to Actual Mounting Direction
 z_axis = [0;0;1];
 v = cross(z_axis,antenna_body);
 s = norm(v);
@@ -276,7 +270,6 @@ title(sprintf("%s (%s mount)",...
 
 colorbar
 view(45,30)
-%%
 
 components = struct( ...
     'TestCase', options.TestCase, ...
@@ -286,7 +279,7 @@ components = struct( ...
     'off_axis_angle_deg', off_axis_angle_deg, ...
     'pointing_loss_dB', pointing_loss_dB);
 
-% Plotting
+% Plot
 if options.ShowPlots
     figure('Color','w','Position',[100 100 900 700])
 
@@ -304,81 +297,81 @@ if options.ShowPlots
     title('Pointing Loss Profile')
     xlabel('Time (s)'); ylabel('Attenuation (dB)')
 end
-
 end
 
-%% ============================================================
-% Helper Functions
-% ============================================================
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%% Helper Functions %%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Satellite Rotational Dynamics
 function dstate = satellite_dynamics(~,state,J)
-omega = state(1:3);
-q = state(4:7);
-wx = omega(1); 
-wy = omega(2); 
-wz = omega(3);
-Jx = J(1); 
-Jy = J(2); 
-Jz = J(3);
-
-tau_c = [0;0;0]; %external torque
-
-% Euler rotational dynamics (only valid if J is diagonal)
-% Angular velocity derivative
-domega = [
-    ((Jy-Jz)/Jx)*wy*wz + tau_c(1)/Jx;
-    ((Jz-Jx)/Jy)*wx*wz + tau_c(2)/Jy;
-    ((Jx-Jy)/Jz)*wx*wy + tau_c(3)/Jz
-];
-
-% Quaternion propagation matrix
-Omega = [
-    0   -wx -wy -wz;
-    wx   0   wz -wy;
-    wy  -wz  0   wx;
-    wz   wy -wx   0
-];
-% Quaternion derivative
-dq = 0.5*Omega*q;
-dstate = [domega; dq];
+    omega = state(1:3);
+    q = state(4:7);
+    wx = omega(1); 
+    wy = omega(2); 
+    wz = omega(3);
+    Jx = J(1); 
+    Jy = J(2); 
+    Jz = J(3);
+    
+    tau_c = [0;0;0]; %external torque
+    
+    % Euler rotational dynamics (only valid if J is diagonal)
+    % Angular velocity derivative
+    domega = [
+        ((Jy-Jz)/Jx)*wy*wz + tau_c(1)/Jx;
+        ((Jz-Jx)/Jy)*wx*wz + tau_c(2)/Jy;
+        ((Jx-Jy)/Jz)*wx*wy + tau_c(3)/Jz
+    ];
+    
+    % Quaternion propagation matrix
+    Omega = [
+        0   -wx -wy -wz;
+        wx   0   wz -wy;
+        wy  -wz  0   wx;
+        wz   wy -wx   0
+    ];
+    % Quaternion derivative
+    dq = 0.5*Omega*q;
+    dstate = [domega; dq];
 end
 
-% Quaternion to Rotation Matrix
+% Convert Quaternion to Rotation Matrix
 function R = quat2rotm_scalar(q)
-q = q/norm(q); %normalize quaternion
-q0 = q(1); 
-q1 = q(2); 
-q2 = q(3); 
-q3 = q(4);
-% build rotation matrix
-R = [
-    q0^2 + q1^2 - q2^2 - q3^2, 2*(q1*q2 - q0*q3),         2*(q1*q3 + q0*q2);
-    2*(q1*q2 + q0*q3),         q0^2 - q1^2 + q2^2 - q3^2, 2*(q2*q3 - q0*q1);
-    2*(q1*q3 - q0*q2),         2*(q2*q3 + q0*q1),         q0^2 - q1^2 - q2^2 + q3^2
-];
+    q = q/norm(q); % Normalize quaternion
+    q0 = q(1); 
+    q1 = q(2); 
+    q2 = q(3); 
+    q3 = q(4);
+    % Build rotation matrix
+    R = [
+        q0^2 + q1^2 - q2^2 - q3^2, 2*(q1*q2 - q0*q3),         2*(q1*q3 + q0*q2);
+        2*(q1*q2 + q0*q3),         q0^2 - q1^2 + q2^2 - q3^2, 2*(q2*q3 - q0*q1);
+        2*(q1*q3 - q0*q2),         2*(q2*q3 + q0*q1),         q0^2 - q1^2 - q2^2 + q3^2
+    ];
 end
 
-% Euler Angles to Quaternion
+% Convert Euler Angles to Quaternions
 function q = euler2quat(roll,pitch,yaw)
-% compute half angle trig functions for roll
-cr = cos(roll/2);  
-sr = sin(roll/2);
-% ... for pitch
-cp = cos(pitch/2); 
-sp = sin(pitch/2);
-% ... for yaw
-cy = cos(yaw/2);   
-sy = sin(yaw/2);
-
-%c compute quaternion components
-q0 = cr*cp*cy + sr*sp*sy;
-q1 = sr*cp*cy - cr*sp*sy;
-q2 = cr*sp*cy + sr*cp*sy;
-q3 = cr*cp*sy - sr*sp*cy;
-
-q = [q0;q1;q2;q3];
-q = q/norm(q);
+    % Compute half angle trig functions for roll
+    cr = cos(roll/2);  
+    sr = sin(roll/2);
+    % ... for pitch
+    cp = cos(pitch/2); 
+    sp = sin(pitch/2);
+    % ... for yaw
+    cy = cos(yaw/2);   
+    sy = sin(yaw/2);
+    
+    % Compute quaternion components
+    q0 = cr*cp*cy + sr*sp*sy;
+    q1 = sr*cp*cy - cr*sp*sy;
+    q2 = cr*sp*cy + sr*cp*sy;
+    q3 = cr*cp*sy - sr*sp*cy;
+    
+    q = [q0;q1;q2;q3];
+    q = q/norm(q);
 end
 
 function antenna_body = get_antenna_orientation(orientation)
