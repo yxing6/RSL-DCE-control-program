@@ -19,7 +19,7 @@ CenterFrequency = 435e6;                        % 435 MHz Carrier Frequency
 MasterClockRate = 32e6;                                             
 DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;        % 1 MSPS Sample Rate
-rxGain = 60; txGain = 50;
+rxGain = 30; txGain = 50;
 % delayBuffer = zeros(256e3,1);                 % Memory array for time-delay emulation       %%%%%%%%%%
 %%%%%%%%%%
 circBuffer   = zeros(256e3, 1);                 % Memory array for time-delay emulation
