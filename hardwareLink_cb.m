@@ -3,7 +3,8 @@
 clear; clc; 
 
 % Define Programmable Attenuator Parameters
-att_port = "COM3";             
+%att_port = "COM3";                 % Port for Windows
+att_port = "/dev/ttyACM0";          % Port for Mac 
 att_baudrate = 115200;       
 test_channel = 1;
 
