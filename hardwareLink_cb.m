@@ -1,4 +1,4 @@
-%% Programmable Attenuator and SDR Link
+%% Hardware Link
 
 clear; clc; 
 
@@ -14,8 +14,8 @@ att = initProgATT(att_port, att_baudrate);
 % Define SDR Parameters
 Platform = "B210";
 SerialNum = "32418F5";
-ChannelMapping = 1;
-CenterFrequency = 435e6;                        % 435 MHz Carrier Frequency
+ChannelMapping = 1;                             % Can be changed; RX and TX can also be split between different channels
+CenterFrequency = 435e6;                        % 435 MHz Carrier Frequency (for ground station segment of the DCE)
 MasterClockRate = 32e6;                                             
 DecimationFactor = 32; InterpolationFactor = DecimationFactor;
 fs = MasterClockRate / DecimationFactor;        % 1 MSPS Sample Rate
@@ -41,7 +41,7 @@ cleanupTX = onCleanup(@() release(SDR_TX));
 % Synchronize B210 & Signal Generator (Verify External 10 MHz Reference Lock Before Proceeding)
 disp("Checking external 10 MHz reference lock...");
 pause(1);                                       % Give the radio a moment to attempt lock after object creation
-if ~referenceLockedStatus(SDR_RX)               % SDR_RX & TX share the same clock : 1 test is enough
+if ~referenceLockedStatus(SDR_RX)               % SDR_RX & TX share the same clock
     error("SDR_RX is not locked to the external 10 MHz reference. Check REF OUT -> REF IN cabling and that the signal generator's reference output is enabled.");
 end
 disp("External reference locked successfully.");
@@ -57,11 +57,11 @@ if isequal(file, 0)
 end
 thisFile = fullfile(path, file);
 fprintf('Reading %s...\n', file);
-csv_table = readtable(thisFile);    % CSV data
+csv_table = readtable(thisFile);    % Tabulates pass file data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
-% Set Up Pass Data Visualisation (Live Plot)
+% Set Up Pass Data Visualisation (Live Plots)
     % Column mapping confirmed from CSV header:
     % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
 markerSize = 10;
@@ -102,8 +102,8 @@ else
 end
 
 % Extract and Re-map Multi-parameter Channel Profiles From CSV Columns to Fit the Program Layout
-totalPoints = height(csv_table);
-channelProfile = zeros(totalPoints, 4);     % Columns: 1=Time, 2=Atten, 3=Delay, 4=Doppler
+totalPoints = height(csv_table);            % Number of data points in the pass file
+channelProfile = zeros(totalPoints, 4);     % Columns: 1 = Time, 2 = Attenuation, 3 = Time Delay, 4 = Doppler Shift
 
 % Convert the Datetime Column Into Relative Elapsed Seconds Starting at 0
 raw_times = datetime(csv_table{:, 1}); 
@@ -207,13 +207,13 @@ drawnow;
 % Reset to Maximum Attenuation
 fprintf("Start of Maximum Attenuation... \n")
 setAttenuation(att, test_channel, 95);
-pause(2.5);
+pause(2.5);                                 % Set to high attenuation state for 2.5 s to simulate the 2.5 s just before the pass
 fprintf("End of Maximum Attenuation. \n")
 
-% Real-time Effect Application Loop
+% Real-time Channel Effect Application Loop
 disp("Beginning playback loop.");
-effectIndex = 1;
-last_hardware_db = -1;     
+effectIndex = 1;                            % Pass file row index
+last_hardware_db = -1;                      % Tracks attenuation values to ensure only new values are updated in the PA
 loopTimer = tic;
 
 while (effectIndex <= totalPoints)
@@ -223,12 +223,12 @@ while (effectIndex <= totalPoints)
 
     % Extract current parameters from processed profile matrix
     current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
-    current_pathloss  = pathloss_att(effectIndex);
-    current_tumbleatt = tumble_att_dB(effectIndex);
-    current_delay     = channelProfile(effectIndex, 3);
-    current_fShift    = channelProfile(effectIndex, 4);
+    current_pathloss  = pathloss_att(effectIndex);      % path loss attenuation
+    current_tumbleatt = tumble_att_dB(effectIndex);     % tumbling attenuation
+    current_delay     = channelProfile(effectIndex, 3); % time delay
+    current_fShift    = channelProfile(effectIndex, 4); % Doppler shift
 
-    % Apply a Doppler Shift and Time Delay to the digital waveform 
+    % Apply a Doppler Shift and Time Delay to the digital waveform array
     [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
         rx_data, current_fShift, phaseOffset, current_delay, circBuffer, writePointer, SamplesPerFrame, fs);
     
@@ -241,12 +241,12 @@ while (effectIndex <= totalPoints)
         % Prevent sending negative numbers or out-of-bounds values to hardware
         current_db = max(0, current_db); 
 
-        % ADD VALUE FOR RICIAN FADING WHEN ADDED
+        % Print channel profiles to command window (for debugging)
         fprintf("Time: %.2fs | Total Atten: %.2f dB |Path Loss Atten: %.2f dB | Pointing Loss (Tumbling): %.2f dB | Rician Fading (dB): %.2f dB | Delay: %.2f ms | Doppler: %.2f Hz\n", ...
             channelProfile(effectIndex, 1), current_db, current_pathloss, current_tumbleatt, 0, current_delay*1e3, current_fShift);
 
         % Send command to programmable attenuator
-        if current_db ~= last_hardware_db
+        if current_db ~= last_hardware_db           % Ensures that PA attenuation value is only updated if pass file attenuation value changes
                 setAttenuation(att, test_channel, current_db);
                 last_hardware_db = current_db;
         end
@@ -278,7 +278,7 @@ end
 % Reset to Maximum Attenuation
 fprintf("Start of Maximum Attenuation... \n")
 setAttenuation(att, test_channel, 95);
-pause(2.5);
+pause(2.5);                                 % Set to high attenuation state for 2.5 s to simulate the 2.5 s just after the pass
 fprintf("End of Maximum Attenuation. \n")
 
 % Release SDR RX/TX (reset to prevent "Busy" locks and power drops)
