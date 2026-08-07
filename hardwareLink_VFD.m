@@ -15,14 +15,18 @@ att = initProgATT(att_port, att_baudrate);
 Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
-CenterFrequency = 435e6;                                       % 435 MHz Carrier Frequency
+CenterFrequency = 435e6;                                      
 MasterClockRate = 32e6;                                             
 DecimationFactor = 32; InterpolationFactor = DecimationFactor;
-fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
+fs = MasterClockRate / DecimationFactor;                       % Sample frequency
 rxGain = 25; txGain = 50;
 maxDelay_s = 12e-3;                                            % Margin above the expected maximum LEO delay (~8.3 ms + margin)
+
+% filter that applies a delay to a signal, where this delay may be fractional 
+% (not just a whole number of samples) and time-varying (it may change with each call).
 vfd = dsp.VariableFractionalDelay('InterpolationMethod', 'Farrow', ...
     'MaximumDelay', ceil(maxDelay_s * fs));                    % Farrow interpolation: rebuild signal 'between 2 samples'
+
 SamplesPerFrame = 4096;                                  
 phaseOffset = 0.0;
 OutputDataType = "double"; 
@@ -64,7 +68,7 @@ csv_table = readtable(thisFile);    % CSV data
 csv_filename = string(file);
 fprintf('Loaded %s\n', file);
 
-% Set Up Pass Data Visualisation (Live Plot)
+% Set Up Pass Data Visualization (Live Plot)
     % Column mapping confirmed from CSV header:
     % 1=t, 2=Range_m, 3=Azimuth_deg, 4=Elevation_deg, 5=PathLoss_dB, 6=Delay_s, 7=Doppler_Hz, 8=Rel_Velocity_mps
 markerSize = 10;
@@ -115,6 +119,7 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 
 % Extract Attenuation From Column E (Column 5)
 channelProfile(:,2) = csv_table{:, 5};
+% Overwrite the actual data to force clear & easily observable transitions on the real-time plots
 x=7;                                                                      % Enable for VFD Testing
 t=15;                                                                     % Enable for VFD Testing
 channelProfile(1:x,2) = 150;                                              % Enable for VFD Testing
@@ -139,12 +144,14 @@ if enableTumble
 end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
-channelProfile(:,3) = csv_table{:, 6};                                                                                                   
+channelProfile(:,3) = csv_table{:, 6};      
+% Overwrite the actual data to force clear & easily observable transitions on the real-time plots
 channelProfile(1:10,3) = 0;                                                % Enable for VFD Testing          
 channelProfile(11:end,3) = 0.1;                                            % Enable for VFD Testing
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
+% Overwrite the actual data to force clear & easily observable transitions on the real-time plots
 channelProfile(1:x,4) = 7000;                                           % Enable for VFD Testing           
 channelProfile(x+1:t,4) = 0;                                            % Enable for VFD Testing
 channelProfile(t+1:end,4) = -7000;                                      % Enable for VFD Testing  
@@ -193,7 +200,7 @@ set(plot_dop,   'XData', NaT, 'YData', NaN);
 if enableTumble
     xlim([ax1, ax2, ax3, ax4, ax5], [raw_times(1), raw_times(end)]);
     set(plot_tumble,   'XData', NaT, 'YData', NaN);
-    setFixedYLim(ax5, tumble_att_dB); % fix Y-axis of axis 5
+    setFixedYLim(ax5, tumble_att_dB);                     % fix Y-axis of axis 5
 else
     xlim([ax1, ax2, ax3, ax4], [raw_times(1), raw_times(end)]);
 end
@@ -223,7 +230,7 @@ while (effectIndex <= totalPoints)
     rx_data = SDR_RX();
 
     % Extract current parameters from processed profile matrix
-    current_db        = channelProfile(effectIndex, 2); % total attenuation including tumbling (if enabled)
+    current_db        = channelProfile(effectIndex, 2);                % total attenuation including tumbling (if enabled)
     current_pathloss  = pathloss_att(effectIndex);
     current_tumbleatt = tumble_att_dB(effectIndex);
 
