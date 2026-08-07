@@ -1,10 +1,15 @@
 %% Hardware Link
 
-clear; clc; 
+clear classes;       % Unloads class definitions and closes hidden handles
+clear mex;           % Unloads MEX-files (crucial for hardware DLLs/drivers)
+clear java;          % Clears Java-based interface objects
+clear;               % Clears workspace variables
+clear all;
+clc;                 % Clears command window
 
 % Define Programmable Attenuator Parameters
-%att_port = "COM3";                 % Port for Windows
-att_port = "/dev/ttyACM0";          % Port for Mac 
+att_port = "COM3";                 % Port for Windows
+%att_port = "/dev/ttyACM0";          % Port for Mac 
 att_baudrate = 115200;       
 test_channel = 1;
 
@@ -49,7 +54,15 @@ disp("External reference locked successfully.");
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
-flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 3);
+numFlushIterations = 50; 
+for i = 1:numFlushIterations
+    [~, ~, overflow] = SDR_RX();
+    if overflow
+        fprintf('Iteration %d: Buffer overflow detected (clearing backlog...)\n', i);
+    else
+        fprintf('Iteration %d: Buffer clear.\n', i);
+    end
+end
 
 % Import Path from CSV
 [file, path] = uigetfile('*.csv', 'Select a CSV File');
@@ -114,9 +127,10 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 channelProfile(:,2) = csv_table{:, 5};
 x=7;                                                                      % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
 t=15;                                                                     % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
-channelProfile(1:x,2) = 150;                                              % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
-channelProfile(x+1:t,2) = 140;                                            % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
-channelProfile(t+1:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+% channelProfile(1:x,2) = 150;                                              % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+% channelProfile(x+1:t,2) = 140;                                            % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+% channelProfile(t+1:end,2) = 130;                                          % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+channelProfile(:,2) = 130;                                          % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
@@ -137,17 +151,17 @@ end
 
 % Extract Pre-Calculated Delay From Column F (Column 6)
 channelProfile(:,3) = csv_table{:, 6};                                         
-% channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
+channelProfile(:,3) = zeros(size(csv_table{:, 6}));                   % Enable to Turn Delay Off                                         
 % channelProfile(:,3) = ones(size(csv_table{:, 6}));                    % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)                   
-channelProfile(1:10,3) = 0;                                             % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
-channelProfile(11:end,3) = 0.1;                                         % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+% channelProfile(1:10,3) = 0;                                             % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
+% channelProfile(11:end,3) = 0.1;                                         % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
 
 % Extract Pre-Calculated Doppler Shift From Column G (Column 7)
 channelProfile(:,4) = csv_table{:, 7};
-% channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
-channelProfile(1:x,4) = 7000;                                           % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
-channelProfile(x+1:t,4) = 0;                                            % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
-channelProfile(t+1:end,4) = -7000;                                      % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
+channelProfile(:,4) = zeros(size(csv_table{:, 7}));                   % Enable to Turn Doppler Shift Off
+% channelProfile(1:x,4) = 7000;                                           % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
+% channelProfile(x+1:t,4) = 0;                                            % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)
+% channelProfile(t+1:end,4) = -7000;                                      % Enable for Circular Buffer Delay Testing (overwrites CSV with constant value)           
 
 % Generate CANX-2 Tumbling Attenuation Profile
 tumble_att_dB = zeros(totalPoints,1);
@@ -230,11 +244,12 @@ while (effectIndex <= totalPoints)
     current_fShift    = channelProfile(effectIndex, 4); % Doppler shift
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
-    [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
-        rx_data, current_fShift, phaseOffset, current_delay, circBuffer, writePointer, SamplesPerFrame, fs);
+    % [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
+    %     rx_data, current_fShift, phaseOffset, current_delay, circBuffer, writePointer, SamplesPerFrame, fs);
     
     % Transmit the modified waveform out of the USRP Transmitter
-    SDR_TX(tx_data);
+    % SDR_TX(tx_data);
+    SDR_TX(rx_data);
 
     % Update Parameters (slower than the live RF pull)
     if (channelProfile(effectIndex, 1) <= toc(loopTimer))
@@ -322,13 +337,13 @@ SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMappi
     ClockSource="External",LocalOscillatorOffset=1e6);
 end
 
-% Flush SDR RX/TX Buffers for Specified Duration
-function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
-    for i = 1:(ceil(duration/(SamplesPerFrame/fs)))
-        flush_data = SDR_RX();
-        SDR_TX(flush_data);
-    end
-end
+% % Flush SDR RX/TX Buffers for Specified Duration
+% function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
+%     for i = 1:(ceil(duration/(SamplesPerFrame/fs)))
+%         flush_data = SDR_RX();
+%         SDR_TX(flush_data);
+%     end
+% end
 
 % Apply Channel Impairments Through SDR
 function [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...

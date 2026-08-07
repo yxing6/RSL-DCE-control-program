@@ -1,6 +1,11 @@
 %% Programmable Attenuator and SDR Link
 
-clear; clc; 
+clear classes;       % Unloads class definitions and closes hidden handles
+clear mex;           % Unloads MEX-files (crucial for hardware DLLs/drivers)
+clear java;          % Clears Java-based interface objects
+clear;               % Clears workspace variables
+clear all;
+clc;                 % Clears command window
 
 % Define Programmable Attenuator Parameters
 att_port = "COM3";                                                               % Check COM Port; 3 is for Howard
@@ -222,7 +227,15 @@ disp("External reference locked successfully.");
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
-flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 3);
+numFlushIterations = 50; 
+for i = 1:numFlushIterations
+    [~, ~, overflow] = SDR_RX();
+    if overflow
+        fprintf('Iteration %d: Buffer overflow detected (clearing backlog...)\n', i);
+    else
+        fprintf('Iteration %d: Buffer clear.\n', i);
+    end
+end
 
 while (effectIndex <= totalPoints)
     
@@ -335,14 +348,6 @@ SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=
     OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6, ...
     TimestampMode="high-precision");
 
-end
-
-% Flush SDR RX/TX Buffers for Specified Duration
-function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
-    for i = 1:(ceil(duration/(SamplesPerFrame/fs)))
-        flush_data = SDR_RX();
-        SDR_TX(flush_data);
-    end
 end
 
 %%%%%%%%%%

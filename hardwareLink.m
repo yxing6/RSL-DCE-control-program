@@ -35,10 +35,17 @@ end
 if exist('SDR_TX', 'var')
     try release(SDR_TX); catch, end
 end
+
 clearvars -except carrierFreq comPort showRangePlot showPathLossPlot showDelayPlot showDopplerPlot ...
     enableFading enableTumbleToggle tumbleTestCase tumbleSatDimensions tumbleMass ...
     tumbleAntennaType tumbleAntennaOrientation tumbleDishRadius tumbleShowPlots
-clc;
+
+clear classes;       % Unloads class definitions and closes hidden handles
+clear mex;           % Unloads MEX-files (crucial for hardware DLLs/drivers)
+clear java;          % Clears Java-based interface objects
+clear;               % Clears workspace variables
+clear all;
+clc;                 % Clears command window
 
 % Define Programmable Attenuator Parameters
 att_port = comPort;                         % Specific port needs to be checked on a per-device basis                                           
@@ -105,7 +112,16 @@ disp("External reference locked successfully.");
 
 % Flush the SDR Buffers to Discard Transient Startup Frames
 disp("Flushing SDR buffers...");
-flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 3);
+% flushSDR(SDR_RX, SDR_TX, fs, SamplesPerFrame, 3);
+numFlushIterations = 50; 
+for i = 1:numFlushIterations
+    [~, ~, overflow] = SDR_RX();
+    if overflow
+        fprintf('Iteration %d: Buffer overflow detected (clearing backlog...)\n', i);
+    else
+        fprintf('Iteration %d: Buffer clear.\n', i);
+    end
+end
 
 % Import Path from CSV
 [file, path] = uigetfile('*.csv', 'Select a CSV File');
@@ -397,13 +413,13 @@ SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMappi
     ClockSource="External",LocalOscillatorOffset=1e6);
 end
 
-% Flush SDR RX/TX Buffers for Specified Duration
-function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
-    for i = 1:(ceil(duration/(SamplesPerFrame/fs)))
-        flush_data = SDR_RX();
-        SDR_TX(flush_data);
-    end
-end
+% % Flush SDR RX/TX Buffers for Specified Duration
+% function flushSDR(SDR_RX,SDR_TX,fs,SamplesPerFrame,duration)
+%     for i = 1:(ceil(duration/(SamplesPerFrame/fs)))
+%         flush_data = SDR_RX();
+%         SDR_TX(flush_data);
+%     end
+% end
 
 % Apply Channel Impairments Through the SDR
 function [phaseOffset, delayBuffer, tx_data, fade_dB] = applyDigitalImpairments(data, fShift, phaseOffset, delay, delayBuffer, SamplesPerFrame, fs, ricianChan)
