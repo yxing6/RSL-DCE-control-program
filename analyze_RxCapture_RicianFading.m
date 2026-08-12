@@ -1,39 +1,35 @@
 %% analyze_RxCapture_RicianFading.m
 %
-% Analyse une capture IQ RÉELLE (sortie de la chaîne SDR TX -> atténuateur
-% -> SDR RX) et lui applique les mêmes tests statistiques que
-% test_RicianFading.m (distribution de Rice, K-factor, spectre Doppler),
-% afin de valider que le fading OBSERVÉ EN SORTIE DE CHAÎNE MATÉRIELLE
-% correspond bien au fading CONFIGURÉ en amont.
+% Analyses a REAL IQ capture (output from the SDR TX chain -> attenuator
+% -> SDR RX) and applies the same statistical tests as
+% test_RicianFading.m (Rice distribution, K-factor, Doppler spectrum),
+% in order to verify that the fading OBSERVED AT THE OUTPUT OF THE HARDWARE CHAIN
+% does indeed correspond to the fading CONFIGURED upstream.
 %
 % ======================================================================
-%  SETUP MATÉRIEL À METTRE EN PLACE AVANT DE CAPTURER LES DONNÉES
+%  HARDWARE SETUP TO BE COMPLETED BEFORE COLLECTING DATA
 % ======================================================================
 %
-% 1) CÂBLAGE (boucle fermée / loopback)
-%    USRP_TX (sortie RF) --> Atténuateur programmable --> USRP_RX (entrée RF)
-%    Les deux USRP (RX et TX) doivent être verrouillés sur la MÊME référence
-%    externe 10 MHz (REF OUT -> REF IN), exactement comme validé par
-%    referenceLockedStatus(SDR_RX) dans hardwareLink_wFading.m.
+% 1) WIRING (closed loop / loopback)
+%    USRP_TX (RF output) --> Programmable attenuator --> USRP_RX (RF input)
+%    RX and TX must be locked to the SAME
+%    external 10 MHz reference (REF OUT -> REF IN), exactly as validated by
+%    referenceLockedStatus(SDR_RX).
 %
-% 2) SIGNAL DE TEST : UNE PORTEUSE CONSTANTE, PAS DE DONNÉES MODULÉES
-%    Pour isoler statistiquement le fading pur (comme dans le test logiciel
-%    où testSig = ones(SamplesPerFrame,1)), il faut TEMPORAIREMENT remplacer
-%    les données modulées réelles par un signal d'amplitude constante
-%    (CW / porteuse pure) AVANT le passage dans ricianChan, dans
-%    applyDigitalImpairments. Sinon le contenu du signal (modulation,
-%    décalage fréquentiel, etc.) contamine l'enveloppe mesurée et fausse
-%    l'estimation de K côté RX.
-%    -> Faites une copie de hardwareLink_wFading.m, et dans la boucle
-%       principale, remplacez temporairement les données à moduler par
-%       data = ones(SamplesPerFrame,1) (ou un ton CW) juste avant l'appel
-%       à applyDigitalImpairments. Gardez le fShift/Doppler à 0 pour ce
-%       test si possible, pour ne pas mélanger Doppler de trajectoire et
-%       Doppler du fading.
+% 2) TEST SIGNAL: A CONSTANT CARRIER, NO MODULATED DATA
+%    To statistically isolate pure fading (as in the software test
+%    where testSig = ones(SamplesPerFrame,1)), you must TEMPORARILY replace
+%    the actual modulated data with a signal of constant amplitude
+%    (CW / pure carrier) BEFORE passing it through ricianChan, in
+%    applyDigitalImpairments. Otherwise, the signal's content (modulation,
+%    frequency offset, etc.) contaminates the measured envelope and distorts
+%    the estimation of K on the RX side.
+%    -> Keep fShift/Doppler at 0 for this test if possible, so as not to mix 
+%       trajectory Doppler and fading Doppler.
 %
-% 3) CAPTURE DES TRAMES RX DANS UN FICHIER
-%    Dans la boucle principale (autour de la ligne `rx_data = SDR_RX();`),
-%    accumulez les trames reçues et sauvegardez-les à la fin du run :
+% 3) CAPTURING RX FRAMES IN A FILE
+%    In the main loop (around the line `rx_data = SDR_RX();`),
+%    accumulate the received frames and save them at the end of the run:
 %
 %       rxCapture = complex(zeros(SamplesPerFrame*numFramesCapture, 1));
 %       idx = 1;
@@ -48,68 +44,65 @@
 %       fadeRate_nominal = ...;% le MaximumDopplerShift configuré
 %       save('rxCapture_test.mat', 'rxCapture', 'fs', 'K_nominal', 'fadeRate_nominal', '-v7.3');
 %
-% 4) DURÉE DE CAPTURE RECOMMANDÉE
-%    Comme pour le test logiciel, il faut couvrir suffisamment de temps de
-%    cohérence pour obtenir des statistiques fiables. Temps de cohérence
-%    approx. Tc = 0.423/fadeRate. Viser au moins ~2000-3000 x Tc de capture
-%    totale pour un bon histogramme (ex: fadeRate=5 Hz -> Tc=85ms -> viser
-%    ~5-10 minutes de capture continue minimum). Attention à la mémoire :
-%    à fs=1 MHz, 10 minutes = 600M échantillons complexes (~9.6 GB en
-%    double) -> envisagez d'écrire par blocs sur disque (fwrite) plutôt
-%    que tout garder en RAM si votre capture dépasse quelques minutes.
+% 4) RECOMMENDED CAPTURE DURATION
+%    As with the software test, sufficient coherence time must be covered
+%    to obtain reliable statistics. Coherence time
+%    approx. Tc = 0.423/fadeRate. Aim for at least ~2000–3000 x Tc of total
+%    acquisition time for a good histogram (e.g. fadeRate=5 Hz -> Tc=85 ms -> aim for
+%    a minimum of ~5–10 minutes of continuous acquisition). Be mindful of memory:
+%    at fs=1 MHz, 10 minutes = 600M complex samples (~9.6 GB in
+%    double) -> consider writing to disk in blocks (fwrite) rather
+%    than keeping everything in RAM if your capture exceeds a few minutes.
 %
-% 5) BASELINE SANS FADING (fortement recommandé)
-%    Avant de capturer avec le fading actif, faites une capture de
-%    référence avec le fading désactivé (enableFading=false, ou K très
-%    grand comme dans le script principal) pour caractériser la variation
-%    résiduelle propre au matériel seul (bruit RX, dérive de gain,
-%    imperfections de l'atténuateur). Cette variation "plancher" doit être
-%    négligeable devant la variation induite par le fading actif -- sinon
-%    le test suivant ne pourra pas distinguer le fading du bruit matériel.
-%    Sauvegardez cette capture dans un fichier séparé, ex: 'rxCapture_baseline.mat'.
+% 5) BASELINE WITHOUT FADING 
+%    Before taking a capture with fading enabled, take a
+%    reference capture with fading disabled (enableFading=false, or a very
+%    large K as in the main script) to characterise the
+%    residual variation specific to the hardware alone (RX noise, gain drift,
+%    attenuator imperfections). This 'baseline' variation must be
+%    negligible compared to the variation induced by active fading — otherwise
+%    the following test will be unable to distinguish between fading and hardware noise.
+%    Save this capture to a separate file, e.g. 'rxCapture_baseline.mat'.
 %
 % ======================================================================
 
 clear; clc; close all;
 
 %% ------------------------------------------------------------------
-%  Paramètres : chemins des fichiers de capture à analyser
+%  Settings: paths to the capture files to be analysed
 %% ------------------------------------------------------------------
-% Laissez captureFile vide ('') pour que le script prenne automatiquement
-% le fichier rxCapture_test_*.mat le plus récent du dossier courant
-% (le script de capture nomme désormais ses fichiers avec K, fadeRate et
-% un horodatage -- voir Capture_hardwareLink_wFading.m). Renseignez un nom
-% explicite ici si vous voulez forcer l'analyse d'une capture précise.
+% Leave 'captureFile' blank ("") so that the script automatically
+% selects the most recent 'rxCapture_test_*.mat' file from the current folder 
 captureFile  = '';
-baselineFile = 'rxCapture_baseline.mat';   % capture sans fading (optionnel mais recommandé)
+baselineFile = 'rxCapture_baseline.mat';   % capture without fading
 
 if isempty(captureFile)
     d = dir('rxCapture_test_*.mat');
     if isempty(d)
-        error(['Aucun fichier rxCapture_test_*.mat trouvé dans le dossier courant.\n' ...
-            'Voir le bloc SETUP en haut de ce script pour générer une capture ' ...
-            '(enableFading=true) depuis Capture_hardwareLink_wFading.m.']);
+        error(["No rxCapture_test_*.mat file found in the current folder.\n" ...
+            "See the SETUP block at the top of this script to generate a capture" ...
+            "(enableFading=true) from Capture_hardwareLink_wFading.m."]);
     end
     [~, iLatest] = max([d.datenum]);
     captureFile = d(iLatest).name;
-    fprintf('Aucun captureFile spécifié -> utilisation du plus récent : %s\n', captureFile);
+    fprintf('No `captureFile` specified -> use the most recent one : %s\n', captureFile);
 end
 
-% La baseline est utilisée automatiquement si le fichier existe.
-% (Plus besoin de mettre un flag à true à la main -- source du problème
-%  précédent : useBaseline était resté à false alors que le fichier existait.)
+% The baseline is used automatically if the file exists.
+% (No longer need to set a flag to true manually — the cause of the
+%  previous problem: useBaseline had remained set to false even though the file existed.)
 useBaseline = isfile(baselineFile);
 
 %% ------------------------------------------------------------------
-%  0) Chargement de la capture RX réelle
+%  0) Loading of the real RX capture
 %% ------------------------------------------------------------------
 if ~isfile(captureFile)
-    error(['Fichier de capture introuvable : %s\n' ...
-        'Voir le bloc SETUP en haut de ce script pour générer ce fichier ' ...
-        'depuis une capture réelle sur le matériel.'], captureFile);
+    error(["Capture file not found: %s\n" ...
+        "See the SETUP block at the top of this script to generate this file" ...
+        "from an actual capture on the hardware."], captureFile);
 end
 
-fprintf('=== Analyse de la capture RX réelle : %s ===\n\n', captureFile);
+fprintf('=== Analyze of the real RX capture : %s ===\n\n', captureFile);
 S = load(captureFile, 'rxCapture', 'fs', 'K_nominal', 'fadeRate_nominal');
 
 rxCapture        = S.rxCapture(:);
@@ -117,15 +110,15 @@ fs               = S.fs;
 K_nominal        = S.K_nominal;
 fadeRate_nominal = S.fadeRate_nominal;
 
-fprintf('      %d échantillons chargés (fs=%g Hz, durée=%.1f s)\n', ...
+fprintf('      %d loaded samples (fs=%g Hz, duration=%.1f s)\n', ...
     numel(rxCapture), fs, numel(rxCapture)/fs);
-fprintf('      Configuration attendue : K=%.2f, fadeRate=%.2f Hz\n\n', ...
+fprintf('      Expected configuration : K=%.2f, fadeRate=%.2f Hz\n\n', ...
     K_nominal, fadeRate_nominal);
 
 %% ------------------------------------------------------------------
-%  0bis) Soustraction de la baseline matérielle (optionnel)
+%  0bis) Subtraction of hardware baseline (optional)
 %% ------------------------------------------------------------------
-baselineCapture = [];   % réutilisée en section 5 pour le tracé superposé
+baselineCapture = [];   % reused in Section 5 for the superimposed plot
 baselineFs      = [];
 
 if useBaseline
@@ -133,195 +126,195 @@ if useBaseline
     baselineCapture = Sb.rxCapture(:);
     baselineFs      = Sb.fs;
     baselineEnv     = abs(baselineCapture);
-    fprintf('      Baseline trouvée (%s) : %d échantillons chargés, fs=%g Hz.\n', ...
+    fprintf('      Baseline found (%s) : %d loaded samples, fs=%g Hz.\n', ...
         baselineFile, numel(baselineCapture), baselineFs);
-    fprintf('      Baseline matérielle (fading désactivé) : coefficient de variation = %.4f\n', ...
+    fprintf('      Hardware baseline (fading disabled) : coefficient of variation = %.4f\n', ...
         std(baselineEnv)/mean(baselineEnv));
-    fprintf('      (doit être largement inférieur à celui mesuré avec fading actif ci-dessous)\n\n');
+    fprintf('      (should be significantly lower than that measured with active fading below)\n\n');
 else
-    fprintf(['      Pas de fichier baseline (%s) trouvé dans le dossier courant.\n' ...
-        '      -> Le graphe de la section 5 n''affichera que la trace avec fading actif.\n' ...
-        '      -> Générez une capture sans fading (voir SETUP point 5) et placez-la\n' ...
-        '         dans le même dossier que ce script pour activer la comparaison.\n\n'], baselineFile);
+    fprintf(['      No baseline file (%s) found in the current folder.\n' ...
+        '      -> The graph in section 5 will only display the trace with fading enabled.\n' ...
+        '      -> Generate a capture without fading (see SETUP, point 5) and place it\n' ...
+        '         in the same folder as this script to enable comparison.\n\n'], baselineFile);
 end
 
 %% ------------------------------------------------------------------
-%  1) Décorrélation temporelle (même logique que test_RicianFading.m)
+%  1) Temporal decorrelation (same logic as test_RicianFading.m)
 %% ------------------------------------------------------------------
 Tc = 0.423 / fadeRate_nominal;
 decimFactor = max(1, round(Tc * fs));
 envelope = abs(rxCapture(1:decimFactor:end));
 
-fprintf('[1/4] Temps de cohérence estimé : %.3f s -> décimation par %d\n', Tc, decimFactor);
-fprintf('      %d échantillons quasi-indépendants retenus.\n\n', numel(envelope));
+fprintf('[1/4] Estimated coherence time : %.3f s -> decimation by %d\n', Tc, decimFactor);
+fprintf('      %d selected quasi-independent samples.\n\n', numel(envelope));
 
 if numel(envelope) < 200
-    warning(['Moins de 200 échantillons quasi-indépendants disponibles : ' ...
-        'les tests statistiques ci-dessous seront peu fiables. ' ...
-        'Augmentez la durée de capture (voir SETUP en haut du script).']);
+    warning(['Fewer than 200 quasi-independent samples available: ' ...
+        'the statistical tests below will be unreliable. ' ...
+        'Increase the capture duration (see SETUP at the top of the script).']);
 end
 
 %% ------------------------------------------------------------------
-%  2) Distribution d'enveloppe RX réelle vs pdf de Rice théorique
+%  2) Actual RX envelope distribution vs. Rice's theoretical PDF
 %% ------------------------------------------------------------------
-fprintf('[2/4] Comparaison histogramme RX réel vs pdf de Rice théorique...\n');
+fprintf("[2/4] Comparison of the actual RX histogram with Rice's theoretical PDF...\n");
 
 omega = mean(envelope.^2);
 nu    = sqrt(K_nominal/(K_nominal+1) * omega);
 sigma = sqrt(omega / (2*(K_nominal+1)));
 
-figure('Name', 'RX réel - Distribution enveloppe', 'Position', [50 50 900 500]);
+figure('Name', 'real RX - Distribution enveloppe', 'Position', [50 50 900 500]);
 histogram(envelope, 60, 'Normalization', 'pdf', 'FaceColor', [0.9 0.5 0.2], ...
-    'EdgeColor', 'none', 'DisplayName', 'Enveloppe RX réelle (hardware)');
+    'EdgeColor', 'none', 'DisplayName', 'Real RX envelope (hardware)');
 hold on;
 x = linspace(0, max(envelope)*1.1, 500);
-plot(x, ricePDF(x, nu, sigma), 'r-', 'LineWidth', 2, 'DisplayName', 'PDF de Rice attendue (K nominal)');
-xlabel('Amplitude de l''enveloppe RX'); ylabel('Densité de probabilité');
-title(sprintf('RX réel : K nominal=%.1f, fadeRate=%.1f Hz (%d ech.)', ...
+plot(x, ricePDF(x, nu, sigma), 'r-', 'LineWidth', 2, 'DisplayName', " Expected Rice's PDF (K nominal)");
+xlabel('RX envelope amplitude'); ylabel('Probability density');
+title(sprintf('Real RX : K nominal=%.1f, fadeRate=%.1f Hz (%d ech.)', ...
     K_nominal, fadeRate_nominal, numel(envelope)));
 legend('Location', 'best'); grid on;
 
 cdf_handle = @(x) riceCDF(x, nu, sigma);
 [h_ks, p_ks, ks_stat] = simpleKSTest(envelope, cdf_handle, 0.05);
-fprintf('      Test K-S : statistique = %.4f, p-value = %.4f\n', ks_stat, p_ks);
+fprintf('      K-S Test : statistics = %.4f, p-value = %.4f\n', ks_stat, p_ks);
 if h_ks == 0
-    fprintf('      -> OK : la chaîne hardware reproduit fidèlement une distribution de Rice.\n\n');
+    fprintf('      -> OK : The hardware chain faithfully reproduces a Rice distribution.\n\n');
 else
-    fprintf('      -> ATTENTION : distribution RX significativement différente de Rice attendue.\n\n');
+    fprintf('      -> PLEASE NOTE : A significantly different RX distribution from Rice''s is expected.\n\n');
 end
 
 %% ------------------------------------------------------------------
-%  3) Estimation du K-factor RÉEL vu par le RX
+%  3) Estimation of the ACTUAL K-factor as seen by RX 
 %% ------------------------------------------------------------------
-fprintf('[3/4] Estimation du K-factor à partir du signal RX réel...\n');
+fprintf('[3/4] Estimation of K-factor from real RX signal...\n');
 
 estK_hw = estimateKFactor(envelope);
 errPct = 100 * abs(estK_hw - K_nominal) / K_nominal;
 
-fprintf('      K configuré (logiciel) : %.2f\n', K_nominal);
-fprintf('      K mesuré (hardware RX) : %.2f\n', estK_hw);
-fprintf('      Écart                  : %.1f %%\n\n', errPct);
+fprintf('      K configured (software) : %.2f\n', K_nominal);
+fprintf('      K measured (hardware RX) : %.2f\n', estK_hw);
+fprintf('      Error                  : %.1f %%\n\n', errPct);
 
 if errPct < 20
-    fprintf('      -> OK : le K mesuré en sortie de chaîne matérielle est cohérent avec le K configuré.\n\n');
+    fprintf('      -> OK : The K value measured at the output of the hardware chain is consistent with the configured K value.\n\n');
 else
-    fprintf(['      -> ATTENTION : écart important entre K configuré et K mesuré sur le RX réel.\n' ...
-        '         Causes possibles : latence de l''atténuateur trop lente pour suivre le fading,\n' ...
-        '         quantification/résolution insuffisante de l''atténuateur, bruit RX excessif,\n' ...
-        '         non-linéarités des amplis, ou saturation ADC pendant les pics de gain.\n\n']);
+    fprintf(['      -> PLEASE NOTE: significant discrepancy between the configured K and the measured K on the actual RX.\n' ...
+        '         Possible causes: attenuator latency too slow to keep up with fading,\n' ...
+        '         insufficient quantisation/resolution of the attenuator, excessive RX noise,\n' ...
+        '         amplifier non-linearities, or ADC saturation during gain peaks.\n\n']);
 end
 
 %% ------------------------------------------------------------------
-%  4) Spectre Doppler mesuré sur le signal RX réel
+%  4) Doppler spectrum measured from the actual RX signal
 %% ------------------------------------------------------------------
-fprintf('[4/4] Vérification du spectre Doppler mesuré sur le RX réel...\n');
+fprintf('[4/4] Verification of the Doppler spectrum measured on the actual receiver...\n');
 
 rx_ac = rxCapture - mean(rxCapture);
 
-% Résolution FFT adaptative : le plafond fixe précédent (nfft=4096) donnait
-% df=244 Hz avec fs=1 MHz, soit 1 seul bin dans la bande +/-5 Hz -- bien
-% trop grossier pour discriminer quoi que ce soit d'un run à l'autre.
-% On vise ici au moins ~10 bins dans la bande +/-fadeRate_nominal.
+% Adaptive FFT resolution: the previous fixed upper limit (nfft=4096) gave
+% df=244 Hz with fs=1 MHz, i.e. just a single bin in the +/-5 Hz band — far
+% too coarse to distinguish anything from one run to the next.
+% The aim here is to have at least ~10 bins within the band +/-fadeRate_nominal.
 target_df   = max(fadeRate_nominal / 10, 0.01);           % Hz
 nfft_target = 2^nextpow2(fs / target_df);
-nfft_maxData = 2^nextpow2(numel(rx_ac) / 8);               % garde assez de segments pour moyenner (pwelch)
-nfft_cap    = 2^22;                                          % plafond raisonnable pour le calcul/mémoire
+nfft_maxData = 2^nextpow2(numel(rx_ac) / 8);               % keep enough segments to calculate the average (pwelch)
+nfft_cap    = 2^22;                                          % a reasonable upper limit for the calculation/memory
 nfft = min([nfft_target, nfft_maxData, nfft_cap]);
 [pxx, freq] = pwelch(rx_ac, hamming(nfft), nfft/2, nfft, fs, 'centered');
 
-figure('Name', 'RX réel - Spectre Doppler', 'Position', [980 50 900 500]);
+figure('Name', 'Real RX - Doppler Spectrum', 'Position', [980 50 900 500]);
 plot(freq, 10*log10(pxx), 'b'); hold on;
-xline(fadeRate_nominal, 'r--', 'LineWidth', 1.5, 'DisplayName', '+MaxDopplerShift attendu');
-xline(-fadeRate_nominal, 'r--', 'LineWidth', 1.5, 'DisplayName', '-MaxDopplerShift attendu');
+xline(fadeRate_nominal, 'r--', 'LineWidth', 1.5, 'DisplayName', '+MaxDopplerShift expected');
+xline(-fadeRate_nominal, 'r--', 'LineWidth', 1.5, 'DisplayName', '-MaxDopplerShift expected');
 xlim([-8*fadeRate_nominal, 8*fadeRate_nominal]);
-xlabel('Fréquence (Hz)'); ylabel('DSP (dB/Hz)');
-title('Spectre Doppler mesuré sur le signal RX réel'); legend('Location', 'best'); grid on;
+xlabel('Frequency (Hz)'); ylabel('DSP (dB/Hz)');
+title('Doppler spectrum measured from the actual RX signal'); legend('Location', 'best'); grid on;
 
 df = freq(2) - freq(1);
 inBand = freq >= -fadeRate_nominal & freq <= fadeRate_nominal;
 nBinsInBand = sum(inBand);
 fracInBand = 100 * sum(pxx(inBand)) * df / (sum(pxx) * df);
-fprintf('      Puissance mesurée dans +/-%.1f Hz : %.1f %%\n', fadeRate_nominal, fracInBand);
-fprintf('      Résolution FFT : nfft=%d, df=%.4f Hz, nb bins dans la bande [-%.1f, +%.1f] Hz = %d\n', ...
+fprintf('      Measured power in +/-%.1f Hz : %.1f %%\n', fadeRate_nominal, fracInBand);
+fprintf('      FFT resolution : nfft=%d, df=%.4f Hz, bin number within the band [-%.1f, +%.1f] Hz = %d\n', ...
     nfft, df, fadeRate_nominal, fadeRate_nominal, nBinsInBand);
 if nBinsInBand <= 2
-    fprintf(['      -> ATTENTION : la bande contient très peu de bins FFT (%d). Le ratio %%%%\n' ...
-        '         mesuré est peu fiable et peut rester quasi constant d''un run à l''autre\n' ...
-        '         indépendamment du vrai fadeRate/K -- augmentez la durée de capture (donc nfft)\n' ...
-        '         ou diminuez fs, sinon ce chiffre ne discrimine pas vraiment vos runs.\n'], nBinsInBand);
+    fprintf(['      -> PLEASE NOTE: the tape contains very few FFT bins (%d). The measured ratio %%%%\n' ...
+        '         is unreliable and may remain virtually constant from one run to the next\n' ...
+        '         regardless of the true fadeRate/K -- increase the capture duration (and thus nfft)\n' ...
+        '         or decrease fs; otherwise, this figure does not really distinguish between your runs.\n'], nBinsInBand);
 end
 fprintf('\n');
 
 %% ------------------------------------------------------------------
-%  5) Trace de puissance RX vs temps (inspection visuelle des fades)
+%  5) RX power versus time plot (visual inspection of the fades)
 %% ------------------------------------------------------------------
 % t = (0:numel(rxCapture)-1)' / fs;
 % rxPower_dB = 20*log10(abs(rxCapture) + eps);
 % 
-% figure('Name', 'RX réel - Puissance vs temps', 'Position', [50 620 1830 350]);
-% plot(t, rxPower_dB, 'b', 'DisplayName', 'Fading actif'); hold on; grid on;
+% figure('Name', 'RX réel - Power vs time', 'Position', [50 620 1830 350]);
+% plot(t, rxPower_dB, 'b', 'DisplayName', 'Fading enabled'); hold on; grid on;
 % 
 % if ~isempty(baselineCapture)
-%     % Recale la baseline sur son propre axe temporel (durées potentiellement différentes)
+%     % Realign the baseline to its own time axis (durations may vary)
 %     t_bl = (0:numel(baselineCapture)-1)' / baselineFs;
 %     bl_dB = 20*log10(abs(baselineCapture) + eps);
 % 
-%     % Recentre la baseline sur le niveau moyen de la capture avec fading,
-%     % pour comparer la VARIABILITÉ des deux traces plutôt que leur gain
-%     % absolu (qui peut différer légèrement entre les deux runs).
+%     % Centres the baseline on the average level of the fading capture,
+%     % to compare the VARIABILITY of the two traces rather than their
+%     % absolute gain (which may differ slightly between the two runs).
 %     bl_dB_aligned = bl_dB - mean(bl_dB) + mean(rxPower_dB);
 % 
 %     plot(t_bl, bl_dB_aligned, 'Color', [0.5 0.5 0.5], 'DisplayName', ...
-%         'Baseline (fading désactivé, recentrée sur le même niveau moyen)');
+%         'Baseline (fading disabled, realigned to the same average level)');
 % 
-%     % --- Diagnostic quantitatif : ratio des écarts-types ---
+%     % --- Quantitative analysis: standard deviation ratio ---
 %     std_fading   = std(rxPower_dB);
 %     std_baseline = std(bl_dB);
 %     stdRatio     = std_fading / std_baseline;
 % 
-%     fprintf('      std(puissance dB) fading actif : %.2f dB\n', std_fading);
-%     fprintf('      std(puissance dB) baseline      : %.2f dB\n', std_baseline);
+%     fprintf('      std(power dB) fading enabled : %.2f dB\n', std_fading);
+%     fprintf('      std(power dB) baseline      : %.2f dB\n', std_baseline);
 %     fprintf('      Ratio std(fading)/std(baseline) : %.2f\n', stdRatio);
 %     if stdRatio < 2
-%         fprintf(['      -> ATTENTION : ratio proche de 1 -> le fading n''est PAS distinguable\n' ...
-%             '         du bruit matériel. Le test n''est pas valide en l''état.\n\n']);
+%         fprintf(['      -> PLEASE NOTE : ratio close to 1 -> fading is not distinguishable\n' ...
+%             '         from hardware noise. The test is not valid as it stands.\n\n']);
 %     elseif stdRatio < 5
-%         fprintf(['      -> Ratio modeste (2-5x) : le fading est visible mais reste proche du\n' ...
-%             '         bruit matériel. Résultat à interpréter avec prudence.\n\n']);
+%         fprintf(['      -> Modest ratio (2–5x): the fading is visible but remains close to\n' ...
+%             '         equipment noise. This result should be interpreted with caution.\n\n']);
 %     else
-%         fprintf(['      -> OK : ratio >= 5x, le fading domine nettement le bruit matériel.\n\n']);
+%         fprintf(['      -> OK : ratio >= 5x, fading clearly outweighs the hardware noise.\n\n']);
 %     end
 % end
 % 
-% xlabel('Temps (s)'); ylabel('Puissance RX (dB, échelle relative)');
-% title('Trace temporelle de la puissance RX : inspection visuelle des creux de fade');
+% xlabel('Time (s)'); ylabel('Power RX (dB, relative scale)');
+% title('RX power time history: visual inspection of fade troughs');
 % legend('Location', 'best');
 % 
-% fprintf('=== Fin de l''analyse ===\n');
+% fprintf('=== End of analyze ===\n');
 
 
 %% Modification power computation
 %% ================================
-% 5) Inspection du fading temporel
+% 5) Inspection of temporal fading
 %% ================================
 
-fprintf('[4/4] Vérification du fading temporel sur enveloppe lissée...\n');
+fprintf('[4/4] Verification of temporal fading on a smoothed envelope...\n');
 
-% Fenêtre de lissage
+% Smoothing window
 L = max(1000, round(0.1 * Tc * fs));
 
-% Puissance moyenne glissante
+% Moving average power
 %blEnv = movmean(abs(baselineCapture).^2, L);
 rxEnv = movmean(abs(rxCapture).^2, L);
 if ~isempty(baselineCapture)
     blEnv = movmean(abs(baselineCapture).^2, L);
 end
 
-% Passage en dB
+% Conversion to dB
 rxPower_dB = 10*log10(rxEnv + eps);
 blPower_dB = 10*log10(blEnv + eps);
 
-% Suppression de l'offset moyen
+% Removal of the average offset
 rxPower_dB = rxPower_dB - mean(rxPower_dB);
 blPower_dB = blPower_dB - mean(blPower_dB);
 
@@ -330,7 +323,7 @@ stdBaseline = std(blPower_dB);
 
 %fprintf('      std(baseline)     : %.2f dB\n',stdBaseline);
 %fprintf('      Ratio             : %.2f\n',stdFading/stdBaseline);
-fprintf('      std(fading actif) : %.2f dB\n', stdFading);
+fprintf('      std(fading enabled) : %.2f dB\n', stdFading);
 if ~isempty(baselineCapture)
     fprintf('      std(baseline)     : %.2f dB\n', stdBaseline);
     fprintf('      Ratio             : %.2f\n', stdFading/stdBaseline);
@@ -341,14 +334,14 @@ plot((0:length(rxPower_dB)-1)/fs,rxPower_dB)
 hold on
 plot((0:length(blPower_dB)-1)/fs,blPower_dB)
 grid on
-xlabel('Temps (s)')
+xlabel('Time (s)')
 ylabel('Amplitude (dB)')
-legend('Fading actif','Baseline')
-title('Enveloppe moyenne')
+legend('Fading enabled','Baseline')
+title('Average envelope')
 
-%% ====================================================================
-%  Fonctions locales (identiques à test_RicianFading.m)
-%% ====================================================================
+%% ==================
+%  Helper Functions
+%% ==================
 
 function pdf = ricePDF(x, nu, sigma)
     z = x*nu/sigma^2;

@@ -1,4 +1,4 @@
-%% Programmable Attenuator and SDR Link
+%% Programmable Attenuator and SDR Link %#codegen
 
 clear; clc; 
 
@@ -15,13 +15,13 @@ att = initProgATT(att_port, att_baudrate);
 Platform = "B210";
 SerialNum = "32418F5";
 ChannelMapping = 1;
-CenterFrequency = 435e6;            % 435 MHz Carrier Frequency
-MasterClockRate = 56e6;                                             % 32e6 in DCETest But Increased to 56e6 For Anti-jitter
-DecimationFactor = 56; InterpolationFactor = DecimationFactor;      % 32 in DCETest But Increased to 56 For Anti-jitter
-fs = MasterClockRate / DecimationFactor;                       % 1 MSPS Sample Rate
+CenterFrequency = 435e6;            
+MasterClockRate = 32e6;                                            
+DecimationFactor = 32; InterpolationFactor = DecimationFactor;     
+fs = MasterClockRate / DecimationFactor;                       
 rxGain = 25; txGain = 50;
 delayBuffer = zeros(256e3,1);       % Memory array for time-delay emulation
-SamplesPerFrame = 4096;                                            % 4096 in DCETest But Increased to 16384 For Anti-jitter
+SamplesPerFrame = 4096;                            
 %delaySDR = SamplesPerFrame/fs;      % Fixed physical hardware/USB loop latency calibration
 phaseOffset = 0.0;
 OutputDataType = "double"; 
@@ -139,7 +139,7 @@ channelProfile(:,2) = csv_table{:, 5};
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
 
-% Normalise Dynamic Attenuation Control by In-line Losses 
+% Normalize Dynamic Attenuation Control by In-line Losses 
 fixed_att = 125;            % 150 in DCETest
 channelProfile(:,2) = round(channelProfile(:,2)/0.25)*0.25 - fixed_att;
 
@@ -230,7 +230,7 @@ last_hardware_db = -1;
 loopTimer = tic;
 
 % TEST capture :
-estimatedFrames = ceil(channelProfile(end,1) * fs / SamplesPerFrame) + 100; % marge de sécurité
+estimatedFrames = ceil(channelProfile(end,1) * fs / SamplesPerFrame) + 100;      % security marge
 rxCapture = complex(zeros(SamplesPerFrame*estimatedFrames, 1));
 captureIdx = 1;
 %%%
@@ -238,19 +238,19 @@ captureIdx = 1;
 while (effectIndex <= totalPoints)
 
     % Pull a live RF data frame from the USRP Receiver
-    % (SIGNAL RÉEL REÇU après passage par TX -> atténuateur -> RX)
+    % (ACTUAL SIGNAL RECEIVED after passing through TX -> attenuator -> RX)
     rx_data = SDR_RX();
 
-    %% TEST : capture du signal RÉELLEMENT REÇU par le hardware
-    %Copy the 4,096 samples received into the next free section of rxCapture:
+    %% TEST : capture of the signal ACTUALLY RECEIVED by the hardware
+    % Copy the 4,096 samples received into the next free section of rxCapture:
     rxCapture(captureIdx:captureIdx+SamplesPerFrame-1) = rx_data;
     captureIdx = captureIdx + SamplesPerFrame;        % where to write the next data block (SamplesPerFrame)
     %%%%
 
-    % === TEST TEMPORAIRE : signal CW constant à ÉMETTRE, pour isoler le
-    % fading pur au niveau du RX (ne touche plus à rx_data ci-dessus) ===
+    % === TEMPORARY TEST : Transmit a constant CW signal to isolate the
+    % pure fading at the receiver (do not alter rx_data above) ===
     txSourceSignal = ones(SamplesPerFrame, 1);
-    % === FIN TEST — à retirer/commenter après validation ===
+    % === END OF TEST — to be removed/commented on after approval ===
 
 
     % Extract current parameters from processed profile matrix
@@ -260,7 +260,7 @@ while (effectIndex <= totalPoints)
     current_tumbleatt = tumble_att_dB(effectIndex);
     current_delay     = channelProfile(effectIndex, 3);
     current_fShift    = channelProfile(effectIndex, 4);
-    current_fShift = 0;  % === TEST : désactive le Doppler de trajectoire, isole le fading pur ===
+    current_fShift = 0;  % === TEST : disables trajectory Doppler, isolates pure fading ===
 
     % Apply a Doppler Shift and Time Delay to the digital waveform array
     % Subtract the known hardware processing lag (delaySDR) to prevent buffer overflows
@@ -324,9 +324,7 @@ K_nominal = K;
 fadeRate_nominal = fadeRate;
 rxCapture = rxCapture(1:captureIdx-1);
 
-% Nom de fichier dépendant de enableFading : évite d'écraser une capture
-% par l'autre (bug précédent : le nom était figé sur 'rxCapture_baseline.mat'
-% quelle que soit la valeur de enableFading).
+% File name dependent on enableFading: prevents one capture from overwriting another.
 if enableFading
     outFile = sprintf('rxCapture_test_K%g_fd%g_%s.mat', ...
         K_nominal, fadeRate_nominal, datestr(now, 'yyyymmdd_HHMMSS'));
@@ -370,11 +368,11 @@ function [SDR_rx,SDR_tx] = initSDR(Platform,SerialNum,ChannelMapping,CenterFrequ
 
 SDR_rx = comm.SDRuReceiver(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=rxGain,MasterClockRate=MasterClockRate,DecimationFactor=DecimationFactor, ...
-    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6);
+    OutputDataType=OutputDataType,SamplesPerFrame=SamplesPerFrame,ClockSource="External",LocalOscillatorOffset=1e6,PPSSource="External");
 
 SDR_tx = comm.SDRuTransmitter(Platform=Platform,SerialNum=SerialNum,ChannelMapping=ChannelMapping, ...
     CenterFrequency=CenterFrequency,Gain=txGain,MasterClockRate=MasterClockRate,InterpolationFactor=InterpolationFactor, ...
-    ClockSource="External",LocalOscillatorOffset=1e6);
+    ClockSource="External",LocalOscillatorOffset=1e6,PPSSource="External");
 end
 
 % Flush SDR RX/TX Buffers for Specified Duration
