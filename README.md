@@ -11,9 +11,9 @@ Signal Processing Toolbox
 Satellite Communications Toolbox   
 Communications Toolbox Support Package for NI USRP Radio      
 Wireless Testbench    
-Wireless Testbench Support Package for USRP Radios   
 Antenna Toolbox      
 Instrument Control Toolbox
+NI USRP Radio Support from Wireless Testbench
 
 # Workflow
 1. Generate satellite pass profiles using runPassPrediction.m.
