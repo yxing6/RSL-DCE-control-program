@@ -166,7 +166,7 @@ function passLinkGUI
     dopplerPlotCheck = uicheckbox(g2, 'Text', 'Show Doppler Plot', 'Value', true);
     dopplerPlotCheck.Layout.Row = 7; dopplerPlotCheck.Layout.Column = [1 2];
 
-    tumbleCheck = uicheckbox(g2, 'Text', 'Enable Tumbling Simulation (tumbling_attenuation.m)', 'Value', false);
+    tumbleCheck = uicheckbox(g2, 'Text', 'Enable Tumbling Simulation (tumblingAttenuation.m)', 'Value', false);
     tumbleCheck.Layout.Row = 8; tumbleCheck.Layout.Column = [1 2];
     tumbleCheck.ValueChangedFcn = @(~,~) toggleTumblePanel();
 

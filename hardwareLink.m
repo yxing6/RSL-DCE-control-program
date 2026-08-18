@@ -19,7 +19,7 @@ if ~exist('showDelayPlot',    'var'), showDelayPlot    = true; end
 if ~exist('showDopplerPlot',  'var'), showDopplerPlot  = true; end
 if ~exist('enableFadingToggle','var'), enableFadingToggle = true; end
 if ~exist('enableTumbleToggle','var'), enableTumbleToggle = false; end
-    % Tumbling sub-parameters (also pre-set by passLinkGUI.m; defaults match tumbling_attenuation.m)
+    % Tumbling sub-parameters (also pre-set by passLinkGUI.m; defaults match tumblingAttenuation.m)
 if ~exist('tumbleTestCase',           'var'), tumbleTestCase           = "stable"; end
 if ~exist('tumbleSatDimensions',      'var'), tumbleSatDimensions      = [0.1 0.1 0.3]; end
 if ~exist('tumbleMass',               'var'), tumbleMass               = 4; end
@@ -218,7 +218,7 @@ channelProfile(:,1) = seconds(raw_times - raw_times(1));
 
 % Extract Attenuation From Column E (Column 5) of the Pass File
 channelProfile(:,2) = csv_table{:, 5};
-channelProfile(:,2) = 130*ones(size(csv_table{:, 5}));                    % Enable for Testing                   
+%channelProfile(:,2) = 130*ones(size(csv_table{:, 5}));                    % Enable for Testing                   
 
 % Generate Path Loss Attenuation Vector
 pathloss_att = channelProfile(:,2);
