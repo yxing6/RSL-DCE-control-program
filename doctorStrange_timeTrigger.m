@@ -244,18 +244,24 @@ release(SDR_RX);
 % usrpTriggerTime = 20;
  current_time = getRadioTime(SDR_TX);
 % fprintf("current time: %.2f \n", current_time);
- TxTime = current_time + 6;
-% fprintf("TxTime: %.2f \n", TxTime);
-% TxTimeC = getRadioTime(SDR_TX) + 6;
-% RxTimeC = getRadioTime(SDR_RX) + 17;
+TxTime = current_time + 6;
+
 SDR_TX.EnableTimeTrigger = true;
-% SDR_TX.TriggerTime = TxTimeC;
+SDR_TX.TriggerTime = TxTime;
 SDR_RX.EnableTimeTrigger = true;
-% SDR_RX.TriggerTime = RxTimeC;
+SDR_RX.TriggerTime = TxTime;
 %%%%%%%%
+
+% Pre-charger une trame de zeros pour le tout premier appel de TX
+%car in n'a pas encore recu de rx_data a ce stade (decalage d'une trame)
+tx_data = complex(zeros(SamplesPerFrame, 1));
 
 
 while (effectIndex <= totalPoints) % Beginning of the effect application loop
+
+    % Transmit the waveform computed during the PREVIOUS iteration
+    %(TX est maintenant appelle en premier)
+    SDR_TX(tx_data);
     
     % Pull a live RF data frame from the USRP Receiver
      rx_data = SDR_RX();
@@ -284,7 +290,7 @@ while (effectIndex <= totalPoints) % Beginning of the effect application loop
     %%%%%%%%%%
     
     % Transmit the modified waveform out of the USRP Transmitter
-    SDR_TX(tx_data);
+    % SDR_TX(tx_data);
 
     % Update Parameters (slower than the live RF pull)
     if (channelProfile(effectIndex, 1) <= toc(loopTimer))
