@@ -237,30 +237,26 @@ effectIndex = 1;
 last_hardware_db = -1;     
 loopTimer = tic;
 
-%%%%%%%%%
+% Provide and enable trigger time
 release(SDR_TX);
 release(SDR_RX);
-% Provide trigger time
-% usrpTriggerTime = 20;
- current_time = getRadioTime(SDR_TX);
-% fprintf("current time: %.2f \n", current_time);
-TxTime = current_time + 6;
-
+current_time = getRadioTime(SDR_TX);
+TxTime = current_time + 5;      % margin : not under 5
 SDR_TX.EnableTimeTrigger = true;
 SDR_TX.TriggerTime = TxTime;
 SDR_RX.EnableTimeTrigger = true;
 SDR_RX.TriggerTime = TxTime;
-%%%%%%%%
 
-% Pre-charger une trame de zeros pour le tout premier appel de TX
-%car in n'a pas encore recu de rx_data a ce stade (decalage d'une trame)
+
+% Pre-load a frame of zeros for the very first TX call
+% because it has not yet received any rx_data at this stage (one-frame delay)
 tx_data = complex(zeros(SamplesPerFrame, 1));
 
 
 while (effectIndex <= totalPoints) % Beginning of the effect application loop
 
     % Transmit the waveform computed during the PREVIOUS iteration
-    %(TX est maintenant appelle en premier)
+    % (TX is called first to avoid blocking the trigger by calling SDR_RX before TX)
     SDR_TX(tx_data);
     
     % Pull a live RF data frame from the USRP Receiver
@@ -277,20 +273,8 @@ while (effectIndex <= totalPoints) % Beginning of the effect application loop
     [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...  
         rx_data, current_fShift, phaseOffset, current_delay, circBuffer, writePointer, SamplesPerFrame, fs);
     
-
-    %%%%%%%%%% 
-    % release(SDR_TX);
-    % release(SDR_RX);
-    % current_time = getRadioTime(SDR_TX);
-    % fprintf("current time: %.2f \n", current_time);
-    % margin = 0.5;
-    % TxTime = current_time + margin;
-    % SDR_TX.TriggerTime = TxTime;
-    % SDR_RX.TriggerTime = TxTime; % Same as tx trigger time
-    %%%%%%%%%%
-    
     % Transmit the modified waveform out of the USRP Transmitter
-    % SDR_TX(tx_data);
+     % SDR_TX(tx_data);          % not used anymore otherwise : 2 call of TX in 1 iteration 
 
     % Update Parameters (slower than the live RF pull)
     if (channelProfile(effectIndex, 1) <= toc(loopTimer))
