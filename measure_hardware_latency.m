@@ -25,7 +25,7 @@ att_port     = "COM3";                 % à adapter
 att_baudrate = 115200;
 test_channel = 1;
 useAttenuator = true;                  % mettre false si vous ne voulez pas piloter l'atténuateur ici
-calib_att_dB  = 40;                    % attenuation fixe pendant la calibration (évite de saturer l'ADC RX2)
+calib_att_dB  = 20;                    % attenuation fixe pendant la calibration (évite de saturer l'ADC RX2)
 
 if useAttenuator
     fprintf("Opening serial connection to attenuator on %s...\n", att_port);
@@ -42,16 +42,17 @@ MasterClockRate   = 32e6;
 DecimationFactor  = 32;
 InterpolationFactor = DecimationFactor;
 fs                = MasterClockRate / DecimationFactor;   % 1 MSPS
-rxGain            = 25;
-txGain            = 50;
+rxGain            = 35;
+txGain            = 60;
 OutputDataType    = "double";
 
 txChannelMapping  = 1;      % TX1
-rxChannelMapping  = 2;      % RX2
+rxChannelMapping  = 1;      % RX2 
+
 
 SamplesPerFrame   = 32768;
 
-numTrials         = 20;     % nombre de mesures pour la statistique
+numTrials         = 7;     % nombre de mesures pour la statistique
 
 %% ---------------- Séquence Zadoff-Chu ----------------
 N  = 839;      % longueur (doit être premier)
@@ -64,9 +65,9 @@ zc = exp(-1j*pi*u*n.*(n+1)/N);         % colonne complexe, |zc|=1
 % Frame 2 : préambule ZC au tout début, puis zéros
 % Frame 3 : silence (marge de garde après, pour laisser le temps au signal
 %           de revenir même si le délai matériel dépasse la fin de frame 2)
-frame1 = zeros(SamplesPerFrame,1);
-frame2 = [zc; zeros(SamplesPerFrame-N,1)];
-frame3 = zeros(SamplesPerFrame,1);
+frame1 = complex(zeros(SamplesPerFrame,1));
+frame2 = [zc; complex(zeros(SamplesPerFrame-N,1))];
+frame3 = complex(zeros(SamplesPerFrame,1));
 
 txFrames = {frame1, frame2, frame3};
 numFrames = numel(txFrames);
@@ -106,7 +107,7 @@ for trial = 1:numTrials
     release(SDR_RX);
 
     currentTime = getRadioTime(SDR_TX);
-    TriggerTime = currentTime + 3;         % marge de sécurité, pas < ~2s
+    TriggerTime = currentTime + 5;         % avant=3 :marge de sécurité, pas < ~2s
 
     SDR_TX.EnableTimeTrigger = true;
     SDR_TX.TriggerTime       = TriggerTime;

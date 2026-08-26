@@ -47,7 +47,7 @@ att_port      = "COM3";
 att_baudrate  = 115200;
 test_channel  = 1;
 useAttenuator = true;
-test_att_dB   = 40;    % même valeur que pendant la calibration, idéalement
+test_att_dB   = 20;    % même valeur que pendant la calibration, idéalement
 
 if useAttenuator
     att = initProgATT(att_port, att_baudrate);
@@ -67,13 +67,14 @@ rxGain              = 25;
 txGain              = 50;
 OutputDataType      = "double";
 
-txChannelMapping = 1;   % TX1
-rxChannelMapping = 2;   % RX2
+ChannelMapping = 1;   
+
 
 SamplesPerFrame = 32768;
 
 %% ---------------- Délais à tester ----------------
-delaysToTest_s = [0, 0.001, 0.005, 0.010, 0.020, 0.050];  % en secondes
+% delaysToTest_s = [0, 0.001, 0.005, 0.010, 0.020, 0.050];  % en secondes
+delaysToTest_s = [0, 0.010];  % en secondes
 numTrialsPerDelay = 5;
 
 %% ---------------- Séquence Zadoff-Chu ----------------
@@ -91,18 +92,18 @@ numTrailFrames = ceil(maxDelaySamples / SamplesPerFrame) + 3;
 
 sourcePreambleStartIdx = numLeadFrames*SamplesPerFrame + 1;
 
-sourceWaveform = [ ...
+sourceWaveform = complex([ ...
     zeros(numLeadFrames*SamplesPerFrame, 1); ...
     zc; ...
     zeros(SamplesPerFrame - N, 1); ...
-    zeros(numTrailFrames*SamplesPerFrame, 1) ];
+    zeros(numTrailFrames*SamplesPerFrame, 1) ]);
 
 numSourceFrames = length(sourceWaveform) / SamplesPerFrame;
 assert(mod(numSourceFrames,1)==0, 'sourceWaveform length must be a multiple of SamplesPerFrame');
 
 %% ---------------- Initialisation SDR ----------------
 disp("Initializing USRP SDR Hardware...");
-[SDR_RX, SDR_TX] = initSDR(Platform, SerialNum, txChannelMapping, rxChannelMapping, ...
+[SDR_RX, SDR_TX] = initSDR(Platform, SerialNum, ChannelMapping, ...
     CenterFrequency, rxGain, txGain, MasterClockRate, DecimationFactor, ...
     InterpolationFactor, OutputDataType, SamplesPerFrame);
 
@@ -136,7 +137,7 @@ for d = 1:numel(delaysToTest_s)
     phaseOffset  = 0.0;
     fShift       = 0;   % pas de Doppler pour ce test
 
-    txWaveform = zeros(size(sourceWaveform));
+    txWaveform = complex(zeros(size(sourceWaveform)));
     for f = 1:numSourceFrames
         idxStart = (f-1)*SamplesPerFrame + 1;
         idxEnd   = f*SamplesPerFrame;
@@ -157,7 +158,7 @@ for d = 1:numel(delaysToTest_s)
         release(SDR_RX);
 
         currentTime = getRadioTime(SDR_TX);
-        TriggerTime = currentTime + 3;
+        TriggerTime = currentTime + 5;
 
         SDR_TX.EnableTimeTrigger = true;
         SDR_TX.TriggerTime       = TriggerTime;
@@ -240,17 +241,17 @@ function setAttenuation(connection, channel, attenuation)
     writeline(connection, cmd);
 end
 
-function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, txChannelMapping, rxChannelMapping, ...
+function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, ChannelMapping, ...
     CenterFrequency, rxGain, txGain, MasterClockRate, DecimationFactor, InterpolationFactor, ...
     OutputDataType, SamplesPerFrame)
 
-    SDR_rx = comm.SDRuReceiver(Platform=Platform, SerialNum=SerialNum, ChannelMapping=rxChannelMapping, ...
+    SDR_rx = comm.SDRuReceiver(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=rxGain, MasterClockRate=MasterClockRate, ...
         DecimationFactor=DecimationFactor, OutputDataType=OutputDataType, ...
         SamplesPerFrame=SamplesPerFrame, ClockSource="External", LocalOscillatorOffset=1e6, ...
         PPSSource="External");
 
-    SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=txChannelMapping, ...
+    SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=txGain, MasterClockRate=MasterClockRate, ...
         InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=1e6, ...
         PPSSource="External");
