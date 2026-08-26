@@ -24,8 +24,8 @@ clc;
 att_port     = "COM3";                 % à adapter
 att_baudrate = 115200;
 test_channel = 1;
-useAttenuator = true;                  % mettre false si vous ne voulez pas piloter l'atténuateur ici
-calib_att_dB  = 20;                    % attenuation fixe pendant la calibration (évite de saturer l'ADC RX2)
+useAttenuator = false;                  % mettre false si vous ne voulez pas piloter l'atténuateur ici
+% calib_att_dB  = 10;                    % attenuation fixe pendant la calibration (évite de saturer l'ADC RX2)
 
 if useAttenuator
     fprintf("Opening serial connection to attenuator on %s...\n", att_port);
@@ -43,13 +43,9 @@ DecimationFactor  = 32;
 InterpolationFactor = DecimationFactor;
 fs                = MasterClockRate / DecimationFactor;   % 1 MSPS
 rxGain            = 35;
-txGain            = 60;
+txGain            = 45;
 OutputDataType    = "double";
-
-txChannelMapping  = 1;      % TX1
-rxChannelMapping  = 1;      % RX2 
-
-
+ChannelMapping  = 1;      
 SamplesPerFrame   = 32768;
 
 numTrials         = 7;     % nombre de mesures pour la statistique
@@ -78,7 +74,7 @@ knownPreambleStartIdx = SamplesPerFrame + 1;   % début de frame2
 
 %% ---------------- Initialisation SDR ----------------
 disp("Initializing USRP SDR Hardware...");
-[SDR_RX, SDR_TX] = initSDR(Platform, SerialNum, txChannelMapping, rxChannelMapping, ...
+[SDR_RX, SDR_TX] = initSDR(Platform, SerialNum, ChannelMapping, ...
     CenterFrequency, rxGain, txGain, MasterClockRate, DecimationFactor, ...
     InterpolationFactor, OutputDataType, SamplesPerFrame);
 
@@ -188,17 +184,17 @@ function setAttenuation(connection, channel, attenuation)
     writeline(connection, cmd);
 end
 
-function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, txChannelMapping, rxChannelMapping, ...
+function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, ChannelMapping, ...
     CenterFrequency, rxGain, txGain, MasterClockRate, DecimationFactor, InterpolationFactor, ...
     OutputDataType, SamplesPerFrame)
 
-    SDR_rx = comm.SDRuReceiver(Platform=Platform, SerialNum=SerialNum, ChannelMapping=rxChannelMapping, ...
+    SDR_rx = comm.SDRuReceiver(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=rxGain, MasterClockRate=MasterClockRate, ...
         DecimationFactor=DecimationFactor, OutputDataType=OutputDataType, ...
         SamplesPerFrame=SamplesPerFrame, ClockSource="External", LocalOscillatorOffset=1e6, ...
         PPSSource="External");
 
-    SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=txChannelMapping, ...
+    SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=txGain, MasterClockRate=MasterClockRate, ...
         InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=1e6, ...
         PPSSource="External");

@@ -132,7 +132,7 @@ for d = 1:numel(delaysToTest_s)
 
     % --- 1) Génère le signal TX en repassant le signal source à travers
     %        EXACTEMENT applyDigitalImpairments, trame par trame ---
-    circBuffer   = zeros(256e3, 1);
+    circBuffer   = zeros(256e3, 1);    
     writePointer = 1;
     phaseOffset  = 0.0;
     fShift       = 0;   % pas de Doppler pour ce test
@@ -167,7 +167,7 @@ for d = 1:numel(delaysToTest_s)
 
         rxFrames = cell(1, numSourceFrames);
         for f = 1:numSourceFrames
-            SDR_TX(txFrames{f});
+            SDR_TX(complex(txFrames{f}));
             rxFrames{f} = SDR_RX();
         end
         rxWaveform = cat(1, rxFrames{:});
