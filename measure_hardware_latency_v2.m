@@ -33,7 +33,7 @@ att_port      = "COM3";   % à adapter
 att_baudrate  = 115200;
 test_channel  = 1;
 useAttenuator = true;     % mettre false si vous ne voulez pas piloter l'atténuateur ici
-calib_att_dB  = 15;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
+calib_att_dB  = 20;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
 
 if useAttenuator
     fprintf("Opening serial connection to attenuator on %s...\n", att_port);
@@ -55,7 +55,7 @@ txGain               = 80;
 OutputDataType       = "double";
 ChannelMapping       = 1;
 SamplesPerFrame      = 32768;   % taille d'une "sous-trame" logique (silence/preambule/silence)
-numTrials            = 20;      % nombre de mesures pour la statistique (relevé de 2 à 20)
+numTrials            = 10;      % nombre de mesures pour la statistique (relevé de 2 à 20)
 
 %% ---------------- Séquence Zadoff-Chu ----------------
 N = 839;   % longueur (doit être premier)
@@ -131,10 +131,10 @@ for trial = 1:numTrials
     SDR_RX.TriggerTime       = TriggerTime;
 
     % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
-    [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
-    if any(txUnderflow)
-        fprintf('Underflow detecte au trial %d (TX)\n', trial);
-    end
+    % [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
+    % if any(txUnderflow)
+    %     fprintf('Underflow detecte au trial %d (TX)\n', trial);
+    % end
 
     [rxWaveform, ~, overflow] = SDR_RX();
     % --------------------------------------------------------------
