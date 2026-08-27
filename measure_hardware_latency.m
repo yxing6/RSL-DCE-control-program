@@ -1,7 +1,7 @@
 %% measure_hardware_latency.m
 %
 % Calibration du délai matériel pur de la chaîne :
-%   USRP TX1  -->  Atténuateur programmable  -->  USRP RX2
+%   USRP TX1 --> Atténuateur programmable --> USRP RX2
 %
 % Méthode : on transmet une trame contenant une séquence de Zadoff-Chu
 % (auto-corrélation quasi parfaite) à une position d'échantillon connue,
@@ -12,6 +12,14 @@
 % le délai matériel en nombre d'échantillons, sans dépendre du timing
 % du PC hôte.
 %
+% CORRECTIF : toute la trame (silence + préambule + silence) est
+% concaténée en UNE SEULE forme d'onde continue, transmise et reçue en
+% UN SEUL appel step() par essai. Les appels step() répétés frame par
+% frame introduisaient du jitter d'ordonnancement hôte (dizaines de ms,
+% signe variable) qui masquait complètement la vraie latence matérielle
+% (attendue de l'ordre de quelques dizaines à centaines d'échantillons
+% à 1 MSPS).
+%
 % Répété sur plusieurs essais pour obtenir moyenne + écart-type.
 
 clear classes;
@@ -20,12 +28,12 @@ clear java;
 clear;
 clc;
 
-%% ---------------- Paramètres attenuateur ----------------
-att_port     = "COM3";                 % à adapter
-att_baudrate = 115200;
-test_channel = 1;
-useAttenuator = false;                  % mettre false si vous ne voulez pas piloter l'atténuateur ici
-% calib_att_dB  = 10;                    % attenuation fixe pendant la calibration (évite de saturer l'ADC RX2)
+%% ---------------- Paramètres atténuateur ----------------
+att_port      = "COM3";   % à adapter
+att_baudrate  = 115200;
+test_channel  = 1;
+useAttenuator = true;     % mettre false si vous ne voulez pas piloter l'atténuateur ici
+calib_att_dB  = 15;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
 
 if useAttenuator
     fprintf("Opening serial connection to attenuator on %s...\n", att_port);
@@ -35,48 +43,51 @@ if useAttenuator
 end
 
 %% ---------------- Paramètres SDR ----------------
-Platform          = "B210";
-SerialNum         = "32418F5";
-CenterFrequency   = 435e6;
-MasterClockRate   = 32e6;
-DecimationFactor  = 32;
-InterpolationFactor = DecimationFactor;
-fs                = MasterClockRate / DecimationFactor;   % 1 MSPS
-rxGain            = 35;
-txGain            = 45;
-OutputDataType    = "double";
-ChannelMapping  = 1;      
-SamplesPerFrame   = 32768;
-
-numTrials         = 7;     % nombre de mesures pour la statistique
+Platform            = "B210";
+SerialNum            = "32418F5";
+CenterFrequency      = 435e6;
+MasterClockRate      = 32e6;
+DecimationFactor     = 32;
+InterpolationFactor  = DecimationFactor;
+fs                   = MasterClockRate / DecimationFactor; % 1 MSPS
+rxGain               = 35;
+txGain               = 80;
+OutputDataType       = "double";
+ChannelMapping       = 1;
+SamplesPerFrame      = 32768;   % taille d'une "sous-trame" logique (silence/preambule/silence)
+numTrials            = 20;      % nombre de mesures pour la statistique (relevé de 2 à 20)
 
 %% ---------------- Séquence Zadoff-Chu ----------------
-N  = 839;      % longueur (doit être premier)
-u  = 25;       % index racine, gcd(u,N)=1
-n  = (0:N-1).';
-zc = exp(-1j*pi*u*n.*(n+1)/N);         % colonne complexe, |zc|=1
+N = 839;   % longueur (doit être premier)
+u = 25;    % index racine, gcd(u,N)=1
+n = (0:N-1).';
+zc = exp(-1j*pi*u*n.*(n+1)/N);   % colonne complexe, |zc|=1
 
-%% ---------------- Construction de la trame connue ----------------
-% Frame 1 : silence (marge de garde avant)
-% Frame 2 : préambule ZC au tout début, puis zéros
-% Frame 3 : silence (marge de garde après, pour laisser le temps au signal
-%           de revenir même si le délai matériel dépasse la fin de frame 2)
+%% ---------------- Construction de la trame connue (buffer unique) ----------------
+% Segment 1 : silence (marge de garde avant)
+% Segment 2 : préambule ZC au tout début, puis zéros
+% Segment 3 : silence (marge de garde après, pour laisser le temps au
+%             signal de revenir même si le délai matériel dépasse la fin
+%             du segment 2)
 frame1 = complex(zeros(SamplesPerFrame,1));
 frame2 = [zc; complex(zeros(SamplesPerFrame-N,1))];
 frame3 = complex(zeros(SamplesPerFrame,1));
 
-txFrames = {frame1, frame2, frame3};
-numFrames = numel(txFrames);
+% Concaténation en UNE seule forme d'onde continue transmise en un seul
+% appel step() -> plus de dépendance au timing d'enchaînement hôte entre
+% appels successifs.
+txWaveform = [frame1; frame2; frame3];
+SamplesPerFrame_total = numel(txWaveform); % 3 * SamplesPerFrame
 
 % Position (en échantillons, à partir du 1er échantillon transmis après
 % TriggerTime) où commence le préambule connu côté TX :
-knownPreambleStartIdx = SamplesPerFrame + 1;   % début de frame2
+knownPreambleStartIdx = SamplesPerFrame + 1; % début de frame2 dans le buffer concaténé
 
 %% ---------------- Initialisation SDR ----------------
 disp("Initializing USRP SDR Hardware...");
 [SDR_RX, SDR_TX] = initSDR(Platform, SerialNum, ChannelMapping, ...
     CenterFrequency, rxGain, txGain, MasterClockRate, DecimationFactor, ...
-    InterpolationFactor, OutputDataType, SamplesPerFrame);
+    InterpolationFactor, OutputDataType, SamplesPerFrame_total);
 
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
@@ -103,37 +114,48 @@ for trial = 1:numTrials
     release(SDR_RX);
 
     currentTime = getRadioTime(SDR_TX);
-    TriggerTime = currentTime + 5;         % avant=3 :marge de sécurité, pas < ~2s
+    TriggerTime = currentTime + 5; % marge de sécurité, pas < ~2s
 
     SDR_TX.EnableTimeTrigger = true;
     SDR_TX.TriggerTime       = TriggerTime;
     SDR_RX.EnableTimeTrigger = true;
     SDR_RX.TriggerTime       = TriggerTime;
 
-    rxFrames = cell(1,numFrames);
-    for k = 1:numFrames
-        SDR_TX(txFrames{k});
-        rxFrames{k} = SDR_RX();
+    % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
+    [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
+    if any(txUnderflow)
+        fprintf('Underflow detecte au trial %d (TX)\n', trial);
     end
-    rxWaveform = cat(1, rxFrames{:});
+
+    [rxWaveform, ~, overflow] = SDR_RX();
+    if overflow ~= 0
+        fprintf('Overflow detecte au trial %d (RX)\n', trial);
+    end
+    % --------------------------------------------------------------
 
     % Filtrage adapté (matched filter) : corrélation avec conj(zc) inversé
     mf = abs(conv(rxWaveform, conj(flipud(zc))));
+
+    %% test
+    figure;
+    plot(20*log10(mf));
+    title(sprintf('correlation - trial %d', trial));
+    %%%%%%%%%%%%%%
+
     [peakVal, peakIdx] = max(mf);
 
     % Vérification grossière de qualité du pic (rapport pic / niveau moyen)
-    noiseFloor = median(mf);
+    noiseFloor    = median(mf);
     peakToFloor_dB = 20*log10(peakVal / max(noiseFloor, eps));
 
     measuredPreambleStartIdx = peakIdx - N + 1;
-
-    delaySamples_all(trial) = measuredPreambleStartIdx - knownPreambleStartIdx;
-    delay_s_all(trial)      = delaySamples_all(trial) / fs;
+    delaySamples_all(trial)  = measuredPreambleStartIdx - knownPreambleStartIdx;
+    delay_s_all(trial)       = delaySamples_all(trial) / fs;
 
     fprintf("Trial %2d/%2d : delay = %6d samples (%.3f ms) | pic/plancher = %.1f dB\n", ...
         trial, numTrials, delaySamples_all(trial), delay_s_all(trial)*1e3, peakToFloor_dB);
 
-    pause(0.2);   % petite pause entre essais
+    pause(0.2); % petite pause entre essais
 end
 
 %% ---------------- Statistiques ----------------
@@ -144,7 +166,7 @@ stdDelay_s  = std(delay_s_all(validMask));
 fprintf("\n=== Résultat calibration ===\n");
 fprintf("Délai matériel moyen : %.4f ms (%.1f échantillons @ %.0f Hz)\n", ...
     meanDelay_s*1e3, meanDelay_s*fs, fs);
-fprintf("Écart-type           : %.4f ms\n", stdDelay_s*1e3);
+fprintf("Écart-type            : %.4f ms\n", stdDelay_s*1e3);
 fprintf("Nombre d'essais valides : %d / %d\n", sum(validMask), numTrials);
 
 figure('Name','Calibration latence matérielle');
@@ -155,24 +177,22 @@ title(sprintf('Latence matérielle : %.3f ms \\pm %.3f ms (n=%d)', ...
 grid on;
 
 % Sauvegarde pour réutilisation dans verify_applied_delay.m
-hardwareLatency_s = meanDelay_s;
+hardwareLatency_s     = meanDelay_s;
 hardwareLatency_std_s = stdDelay_s;
 save('hardware_latency_calibration.mat', 'hardwareLatency_s', 'hardwareLatency_std_s', ...
-     'delay_s_all', 'fs', 'SamplesPerFrame', 'N', 'u');
+    'delay_s_all', 'fs', 'SamplesPerFrame', 'N', 'u');
 fprintf("Résultat sauvegardé dans hardware_latency_calibration.mat\n");
 
 %% ---------------- Nettoyage ----------------
 if useAttenuator
-    setAttenuation(att, test_channel, 95);   % retour en attenuation max par sécurité
+    setAttenuation(att, test_channel, 95); % retour en atténuation max par sécurité
 end
 release(SDR_RX);
 release(SDR_TX);
 disp("Calibration terminée.");
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%% Helper Functions %%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Helper Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 function att_serial = initProgATT(port, baudrate)
     att_serial = serialport(port, baudrate);
