@@ -33,7 +33,7 @@ att_port      = "COM3";   % à adapter
 att_baudrate  = 115200;
 test_channel  = 1;
 useAttenuator = true;     % mettre false si vous ne voulez pas piloter l'atténuateur ici
-calib_att_dB  = 15;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
+calib_att_dB  = 40;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
 
 if useAttenuator
     fprintf("Opening serial connection to attenuator on %s...\n", att_port);
@@ -55,7 +55,7 @@ txGain               = 80;
 OutputDataType       = "double";
 ChannelMapping       = 1;
 SamplesPerFrame      = 32768;   % taille d'une "sous-trame" logique (silence/preambule/silence)
-numTrials            = 20;      % nombre de mesures pour la statistique (relevé de 2 à 20)
+numTrials            = 10;      % nombre de mesures pour la statistique (relevé de 2 à 20)
 
 %% ---------------- Séquence Zadoff-Chu ----------------
 N = 839;   % longueur (doit être premier)
@@ -121,17 +121,26 @@ for trial = 1:numTrials
     SDR_RX.EnableTimeTrigger = true;
     SDR_RX.TriggerTime       = TriggerTime;
 
-    % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
-    [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
-    if any(txUnderflow)
-        fprintf('Underflow detecte au trial %d (TX)\n', trial);
-    end
+    % % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
+    % [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
+    % if any(txUnderflow)
+    %     fprintf('Underflow detecte au trial %d (TX)\n', trial);
+    % end
 
     [rxWaveform, ~, overflow] = SDR_RX();
-    if overflow ~= 0
-        fprintf('Overflow detecte au trial %d (RX)\n', trial);
-    end
     % --------------------------------------------------------------
+
+    % CORRECTIF : un overflow RX signifie que le buffer host n'a pas ete
+    % rempli correctement (souvent rempli de zeros) -> toute mesure de
+    % delai issue de ce buffer est un artefact numerique sans valeur
+    % physique (peakToFloor_dB = -Inf car noiseFloor = median(mf) = 0).
+    % On rejette immediatement l'essai plutot que de le laisser polluer
+    % les statistiques.
+    if any(overflow ~= 0)
+        fprintf('Overflow detecte au trial %d (RX) -> essai REJETE\n', trial);
+        pause(0.5); % laisse le temps au buffer USB/DMA de se vider avant le prochain trigger
+        continue;   % delaySamples_all(trial) reste NaN, exclu des stats
+    end
 
     % Filtrage adapté (matched filter) : corrélation avec conj(zc) inversé
     mf = abs(conv(rxWaveform, conj(flipud(zc))));
@@ -148,6 +157,17 @@ for trial = 1:numTrials
     noiseFloor    = median(mf);
     peakToFloor_dB = 20*log10(peakVal / max(noiseFloor, eps));
 
+    % Garde-fou supplementaire : meme sans overflow signale, un pic trop
+    % faible par rapport au plancher de bruit est suspect (bruit pur,
+    % pas de vraie correlation) -> on rejette aussi ces essais.
+    minPeakToFloor_dB = 6; % seuil (minimum) a ajuster selon le lien
+    if ~isfinite(peakToFloor_dB) || peakToFloor_dB < minPeakToFloor_dB
+        fprintf("Trial %2d/%2d : pic/plancher = %.1f dB (< %d dB) -> essai REJETE\n", ...
+            trial, numTrials, peakToFloor_dB, minPeakToFloor_dB);
+        pause(0.3);
+        continue;
+    end
+
     measuredPreambleStartIdx = peakIdx - N + 1;
     delaySamples_all(trial)  = measuredPreambleStartIdx - knownPreambleStartIdx;
     delay_s_all(trial)       = delaySamples_all(trial) / fs;
@@ -155,7 +175,7 @@ for trial = 1:numTrials
     fprintf("Trial %2d/%2d : delay = %6d samples (%.3f ms) | pic/plancher = %.1f dB\n", ...
         trial, numTrials, delaySamples_all(trial), delay_s_all(trial)*1e3, peakToFloor_dB);
 
-    pause(0.2); % petite pause entre essais
+    pause(0.3); % petite pause entre essais
 end
 
 %% ---------------- Statistiques ----------------
