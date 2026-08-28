@@ -131,10 +131,10 @@ for trial = 1:numTrials
     SDR_RX.TriggerTime       = TriggerTime;
 
     % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
-    % [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
-    % if any(txUnderflow)
-    %     fprintf('Underflow detecte au trial %d (TX)\n', trial);
-    % end
+    [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
+    if any(txUnderflow)
+        fprintf('Underflow detecte au trial %d (TX)\n', trial);
+    end
 
     [rxWaveform, ~, overflow] = SDR_RX();
     % --------------------------------------------------------------
@@ -158,16 +158,34 @@ for trial = 1:numTrials
 
     % Filtrage adapté (matched filter) : corrélation avec conj(zc) inversé
     mf = abs(conv(rxWaveform, conj(flipud(zc))));
-
-    %% test
-    figure;
-    plot(20*log10(mf));
-    title(sprintf('correlation - trial %d', trial));
-    %%%%%%%%%%%%%%
+    mf_dB = 20*log10(mf);
 
     [peakVal, peakIdx] = max(mf);
-    plot(max(mf)); %%%%%%% test : just to see
-    title(sprintf('peak - trial %d', trial))        %%%test
+    peakVal_dB = 20*log10(peakVal);
+
+    % ---- Plot 1 : sortie complète de la corrélation ----
+    figure('Name', sprintf('Correlation output - trial %d', trial));
+    plot(mf_dB);
+    hold on;
+    plot(peakIdx, peakVal_dB, 'ro', 'MarkerSize', 8, 'LineWidth', 1.5); % marque le pic detecte sur la vue complete
+    hold off;
+    xlabel('Échantillon'); ylabel('|corrélation| (dB)');
+    title(sprintf('Sortie de corrélation complète - trial %d', trial));
+    grid on;
+
+    % ---- Plot 2 : zoom sur le pic détecté ----
+    zoomHalfWidth = min(500, floor(numel(mf)/4)); % fenetre de zoom autour du pic (echantillons)
+    zoomStart = max(1, peakIdx - zoomHalfWidth);
+    zoomEnd   = min(numel(mf), peakIdx + zoomHalfWidth);
+
+    figure('Name', sprintf('Detected peak - trial %d', trial));
+    plot(zoomStart:zoomEnd, mf_dB(zoomStart:zoomEnd));
+    hold on;
+    plot(peakIdx, peakVal_dB, 'ro', 'MarkerSize', 8, 'LineWidth', 1.5);
+    hold off;
+    xlabel('Échantillon'); ylabel('|corrélation| (dB)');
+    title(sprintf('Pic de corrélation détecté - trial %d (idx=%d)', trial, peakIdx));
+    grid on;
 
     % Vérification grossière de qualité du pic (rapport pic / niveau moyen)
     noiseFloor    = median(mf);
@@ -253,5 +271,9 @@ function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, ChannelMapping, ...
     SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=txGain, MasterClockRate=MasterClockRate, ...
         InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=1e6, ...
-        PPSSource="External");
+        PPSSource="External", EnableBurstMode=true, NumFramesInBurst=1);
+    % CORRECTIF (voir discussion precedente) : sans EnableBurstMode, le TX
+    % reste en streaming continu apres l'unique appel step() du trial et
+    % se met en sous-alimentation avant le trial suivant, ce qui polluait
+    % la capture RX du cycle suivant (pattern d'overflow alterne observe).
 end
