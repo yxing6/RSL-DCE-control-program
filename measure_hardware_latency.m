@@ -33,7 +33,7 @@ att_port      = "COM3";   % à adapter
 att_baudrate  = 115200;
 test_channel  = 1;
 useAttenuator = true;     % mettre false si vous ne voulez pas piloter l'atténuateur ici
-calib_att_dB  = 40;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
+calib_att_dB  = 30;       % atténuation fixe pendant la calibration (évite de saturer l'ADC RX2)
 
 if useAttenuator
     fprintf("Opening serial connection to attenuator on %s...\n", att_port);
@@ -152,6 +152,8 @@ for trial = 1:numTrials
     %%%%%%%%%%%%%%
 
     [peakVal, peakIdx] = max(mf);
+    plot(max(mf)); %%%%%%% test : just to see
+    title(sprintf('peak - trial %d', trial))        %%%test
 
     % Vérification grossière de qualité du pic (rapport pic / niveau moyen)
     noiseFloor    = median(mf);
