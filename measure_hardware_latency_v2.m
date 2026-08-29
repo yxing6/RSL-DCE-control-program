@@ -55,7 +55,7 @@ txGain               = 80;
 OutputDataType       = "double";
 ChannelMapping       = 1;
 SamplesPerFrame      = 32768;   % taille d'une "sous-trame" logique (silence/preambule/silence)
-numTrials            = 10;      % nombre de mesures pour la statistique (relevé de 2 à 20)
+numTrials            = 6;      % nombre de mesures pour la statistique (relevé de 2 à 20)
 
 %% ---------------- Séquence Zadoff-Chu ----------------
 N = 839;   % longueur (doit être premier)
@@ -131,10 +131,12 @@ for trial = 1:numTrials
     SDR_RX.TriggerTime       = TriggerTime;
 
     % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
-    [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
-    if any(txUnderflow)
-        fprintf('Underflow detecte au trial %d (TX)\n', trial);
-    end
+    % [~, txUnderflow] = SDR_TX(complex(txWaveform)); % only 1 ouput argument available
+    % SDR_TX(complex(txWaveform)); 
+   
+    % if any(txUnderflow)
+    %     fprintf('Underflow detecte au trial %d (TX)\n', trial);
+    % end
 
     [rxWaveform, ~, overflow] = SDR_RX();
     % --------------------------------------------------------------
@@ -271,9 +273,6 @@ function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, ChannelMapping, ...
     SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=txGain, MasterClockRate=MasterClockRate, ...
         InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=1e6, ...
-        PPSSource="External", EnableBurstMode=true, NumFramesInBurst=1);
-    % CORRECTIF (voir discussion precedente) : sans EnableBurstMode, le TX
-    % reste en streaming continu apres l'unique appel step() du trial et
-    % se met en sous-alimentation avant le trial suivant, ce qui polluait
-    % la capture RX du cycle suivant (pattern d'overflow alterne observe).
+        PPSSource="External");
+  
 end

@@ -122,10 +122,8 @@ for trial = 1:numTrials
     SDR_RX.TriggerTime       = TriggerTime;
 
     % % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
-    % [~, txUnderflow] = SDR_TX(complex(txWaveform)); %#ok<ASGLU>
-    % if any(txUnderflow)
-    %     fprintf('Underflow detecte au trial %d (TX)\n', trial);
-    % end
+    % SDR_TX(complex(txWaveform));        %genere erreur 'trigger time prior to usrp time' et crash le script
+    
 
     [rxWaveform, ~, overflow] = SDR_RX();
     % --------------------------------------------------------------
@@ -152,8 +150,6 @@ for trial = 1:numTrials
     %%%%%%%%%%%%%%
 
     [peakVal, peakIdx] = max(mf);
-    plot(max(mf)); %%%%%%% test : just to see
-    title(sprintf('peak - trial %d', trial))        %%%test
 
     % Vérification grossière de qualité du pic (rapport pic / niveau moyen)
     noiseFloor    = median(mf);
