@@ -131,12 +131,9 @@ for trial = 1:numTrials
     SDR_RX.TriggerTime       = TriggerTime;
 
     % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
-    % [~, txUnderflow] = SDR_TX(complex(txWaveform)); % only 1 ouput argument available
     % SDR_TX(complex(txWaveform)); 
    
-    % if any(txUnderflow)
-    %     fprintf('Underflow detecte au trial %d (TX)\n', trial);
-    % end
+    
 
     [rxWaveform, ~, overflow] = SDR_RX();
     % --------------------------------------------------------------
