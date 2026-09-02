@@ -123,17 +123,14 @@ for trial = 1:numTrials
     % voir s'il correle avec les essais qui echouent ensuite.
     fprintf('  [diag] release() a pris %.3f s\n', releaseElapsed);
 
-    SDR_TX.EnableTimeTrigger = true;
-    SDR_RX.EnableTimeTrigger = true;
-
     currentTime = getRadioTime(SDR_TX);
     TriggerTime = currentTime + 8; % marge augmentee (etait 5s) par securite
     fprintf('current usrp time: %.9f s\n', currentTime);
     fprintf('triger time: %.9f s\n', TriggerTime);
-
-    % SDR_TX.EnableTimeTrigger = true;
+    
+    SDR_TX.EnableTimeTrigger = true;
     SDR_TX.TriggerTime       = TriggerTime;
-    % SDR_RX.EnableTimeTrigger = true;
+    SDR_RX.EnableTimeTrigger = true;
     SDR_RX.TriggerTime       = TriggerTime;
 
     % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
@@ -216,6 +213,8 @@ for trial = 1:numTrials
 
     pause(0.3); % petite pause entre essais
 end
+
+
 
 %% ---------------- Statistiques ----------------
 validMask   = ~isnan(delay_s_all);
