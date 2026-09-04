@@ -47,7 +47,7 @@ att_port      = "COM3";
 att_baudrate  = 115200;
 test_channel  = 1;
 useAttenuator = true;
-test_att_dB   = 20;    % même valeur que pendant la calibration, idéalement
+test_att_dB   = 30;    % même valeur que pendant la calibration, idéalement !!
 
 if useAttenuator
     att = initProgATT(att_port, att_baudrate);
@@ -63,19 +63,16 @@ MasterClockRate     = 32e6;
 DecimationFactor    = 32;
 InterpolationFactor = DecimationFactor;
 fs                  = MasterClockRate / DecimationFactor;   % 1 MSPS
-rxGain              = 25;
-txGain              = 50;
+rxGain              = 10;
+txGain              = 15;
 OutputDataType      = "double";
-
 ChannelMapping = 1;   
-
-
-SamplesPerFrame = 32768;
+SamplesPerFrame = 20000;
 
 %% ---------------- Délais à tester ----------------
 % delaysToTest_s = [0, 0.001, 0.005, 0.010, 0.020, 0.050];  % en secondes
 delaysToTest_s = [0, 0.010];  % en secondes
-numTrialsPerDelay = 5;
+numTrialsPerDelay = 3;
 
 %% ---------------- Séquence Zadoff-Chu ----------------
 N  = 839;
@@ -98,6 +95,8 @@ sourceWaveform = complex([ ...
     zeros(SamplesPerFrame - N, 1); ...
     zeros(numTrailFrames*SamplesPerFrame, 1) ]);
 
+SamplesPerFrame_total = length(sourceWaveform);     % 3 * SamplesPerFrame
+
 numSourceFrames = length(sourceWaveform) / SamplesPerFrame;
 assert(mod(numSourceFrames,1)==0, 'sourceWaveform length must be a multiple of SamplesPerFrame');
 
@@ -117,10 +116,10 @@ if ~referenceLockedStatus(SDR_RX)
 end
 disp("External reference locked successfully.");
 
-disp("Flushing SDR buffers...");
-for i = 1:20
-    [~, ~, ~] = SDR_RX();
-end
+% disp("Flushing SDR buffers...");
+% for i = 1:20
+%     [~, ~, ~] = SDR_RX();
+% end
 
 %% ---------------- Boucle de test sur les délais ----------------
 results = struct('requested_s', {}, 'measured_total_s', {}, 'measured_digital_s', {}, ...
@@ -145,12 +144,12 @@ for d = 1:numel(delaysToTest_s)
 
         [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
             rx_data_sim, fShift, phaseOffset, current_delay, circBuffer, writePointer, ...
-            SamplesPerFrame, fs);
+            SamplesPerFrame_total, fs);
 
         txWaveform(idxStart:idxEnd) = tx_data;
     end
 
-    txFrames = mat2cell(txWaveform, SamplesPerFrame*ones(numSourceFrames,1), 1);
+    % txFrames = mat2cell(txWaveform, SamplesPerFrame*ones(numSourceFrames,1), 1);
 
     for trial = 1:numTrialsPerDelay
 
@@ -159,19 +158,36 @@ for d = 1:numel(delaysToTest_s)
 
         currentTime = getRadioTime(SDR_TX);
         TriggerTime = currentTime + 5;
+        fprintf('current USRP time: %.9f s\n', currentTime);
+        fprintf('trigger time: %.9f s\n', TriggerTime);
 
         SDR_TX.EnableTimeTrigger = true;
         SDR_TX.TriggerTime       = TriggerTime;
         SDR_RX.EnableTimeTrigger = true;
         SDR_RX.TriggerTime       = TriggerTime;
 
-        rxFrames = cell(1, numSourceFrames);
-        for f = 1:numSourceFrames
-            SDR_TX(complex(txFrames{f}));
-            rxFrames{f} = SDR_RX();
-        end
-        rxWaveform = cat(1, rxFrames{:});
+        % rxFrames = cell(1, numSourceFrames);
+        % for f = 1:numSourceFrames
+        %     SDR_TX(complex(txFrames{f}));
+        %     rxFrames{f} = SDR_RX();
+        % end
+        % rxWaveform = cat(1, rxFrames{:});
+        %%%%%%
+        SDR_TX(complex(txWaveform));
+        rt = getRadioTime(SDR_TX);
+        fprintf('current USRP time: %.9f s\n', rt);
 
+        [rxWaveform, ~, overflow, rxTimestamp] = SDR_RX();
+        fprintf('RX timestamp: %.9f s\n', rxTimestamp);
+        %%%%%%%
+
+        if any(overflow ~= 0)
+            fprintf('Overflow detected (delay=%.1f ms, trial %d) -> rejected trial \n', current_delay*1e3, trial);
+            release(SDR_RX);
+            pause(0.8);
+            continue;
+        end
+        
         mf = abs(conv(rxWaveform, conj(flipud(zc))));
         [peakVal, peakIdx] = max(mf);
         noiseFloor = median(mf);
@@ -248,12 +264,12 @@ function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, ChannelMapping, ...
     SDR_rx = comm.SDRuReceiver(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=rxGain, MasterClockRate=MasterClockRate, ...
         DecimationFactor=DecimationFactor, OutputDataType=OutputDataType, ...
-        SamplesPerFrame=SamplesPerFrame, ClockSource="External", LocalOscillatorOffset=1e6, ...
+        SamplesPerFrame=SamplesPerFrame, ClockSource="External", LocalOscillatorOffset=0, ...
         PPSSource="External");
 
     SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=txGain, MasterClockRate=MasterClockRate, ...
-        InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=1e6, ...
+        InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=0, ...
         PPSSource="External");
 end
 
