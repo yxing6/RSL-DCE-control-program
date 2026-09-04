@@ -104,7 +104,7 @@ assert(mod(numSourceFrames,1)==0, 'sourceWaveform length must be a multiple of S
 disp("Initializing USRP SDR Hardware...");
 [SDR_RX, SDR_TX] = initSDR(Platform, SerialNum, ChannelMapping, ...
     CenterFrequency, rxGain, txGain, MasterClockRate, DecimationFactor, ...
-    InterpolationFactor, OutputDataType, SamplesPerFrame);
+    InterpolationFactor, OutputDataType, SamplesPerFrame);      % SamplesPerFrame_total
 
 cleanupRX = onCleanup(@() release(SDR_RX));
 cleanupTX = onCleanup(@() release(SDR_TX));
@@ -144,7 +144,7 @@ for d = 1:numel(delaysToTest_s)
 
         [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
             rx_data_sim, fShift, phaseOffset, current_delay, circBuffer, writePointer, ...
-            SamplesPerFrame_total, fs);
+            SamplesPerFrame, fs);
 
         txWaveform(idxStart:idxEnd) = tx_data;
     end
@@ -157,7 +157,7 @@ for d = 1:numel(delaysToTest_s)
         % release(SDR_RX);
 
         currentTime = getRadioTime(SDR_TX);
-        TriggerTime = currentTime + 5;
+        TriggerTime = currentTime + 15;
         fprintf('current USRP time: %.9f s\n', currentTime);
         fprintf('trigger time: %.9f s\n', TriggerTime);
 
