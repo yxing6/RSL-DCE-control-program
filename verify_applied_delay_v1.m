@@ -95,8 +95,6 @@ sourceWaveform = complex([ ...
     zeros(SamplesPerFrame - N, 1); ...
     zeros(numTrailFrames*SamplesPerFrame, 1) ]);
 
-SamplesPerFrame_total = length(sourceWaveform);     % 3 * SamplesPerFrame
-
 numSourceFrames = length(sourceWaveform) / SamplesPerFrame;
 assert(mod(numSourceFrames,1)==0, 'sourceWaveform length must be a multiple of SamplesPerFrame');
 
@@ -144,12 +142,12 @@ for d = 1:numel(delaysToTest_s)
 
         [phaseOffset, circBuffer, writePointer, tx_data] = applyDigitalImpairments(...
             rx_data_sim, fShift, phaseOffset, current_delay, circBuffer, writePointer, ...
-            SamplesPerFrame_total, fs);
+            SamplesPerFrame, fs);
 
         txWaveform(idxStart:idxEnd) = tx_data;
     end
 
-    % txFrames = mat2cell(txWaveform, SamplesPerFrame*ones(numSourceFrames,1), 1);
+    txFrames = mat2cell(txWaveform, SamplesPerFrame*ones(numSourceFrames,1), 1);
 
     for trial = 1:numTrialsPerDelay
 
@@ -166,27 +164,12 @@ for d = 1:numel(delaysToTest_s)
         SDR_RX.EnableTimeTrigger = true;
         SDR_RX.TriggerTime       = TriggerTime;
 
-        % rxFrames = cell(1, numSourceFrames);
-        % for f = 1:numSourceFrames
-        %     SDR_TX(complex(txFrames{f}));
-        %     rxFrames{f} = SDR_RX();
-        % end
-        % rxWaveform = cat(1, rxFrames{:});
-        %%%%%%
-        SDR_TX(complex(txWaveform));
-        rt = getRadioTime(SDR_TX);
-        fprintf('current USRP time: %.9f s\n', rt);
-
-        [rxWaveform, ~, overflow, rxTimestamp] = SDR_RX();
-        fprintf('RX timestamp: %.9f s\n', rxTimestamp);
-        %%%%%%%
-
-        if any(overflow ~= 0)
-            fprintf('Overflow detected (delay=%.1f ms, trial %d) -> rejected trial \n', current_delay*1e3, trial);
-            release(SDR_RX);
-            pause(0.8);
-            continue;
+        rxFrames = cell(1, numSourceFrames);
+        for f = 1:numSourceFrames
+            SDR_TX(complex(txFrames{f}));
+            rxFrames{f} = SDR_RX();
         end
+        rxWaveform = cat(1, rxFrames{:});
         
         mf = abs(conv(rxWaveform, conj(flipud(zc))));
         [peakVal, peakIdx] = max(mf);
