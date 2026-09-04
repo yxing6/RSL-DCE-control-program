@@ -50,12 +50,12 @@ MasterClockRate      = 32e6;
 DecimationFactor     = 32;
 InterpolationFactor  = DecimationFactor;
 fs                   = MasterClockRate / DecimationFactor; % 1 MSPS
-rxGain               = 10;
-txGain               = 15;
+rxGain               = 35;
+txGain               = 80;
 OutputDataType       = "double";
 ChannelMapping       = 1;
-SamplesPerFrame      = 20000;   % taille d'une "sous-trame" logique (silence/preambule/silence)
-numTrials            = 3;      % nombre de mesures pour la statistique (relevé de 2 à 20)
+SamplesPerFrame      = 32768;   % taille d'une "sous-trame" logique (silence/preambule/silence)
+numTrials            = 6;      % nombre de mesures pour la statistique (relevé de 2 à 20)
 
 %% ---------------- Séquence Zadoff-Chu ----------------
 N = 839;   % longueur (doit être premier)
@@ -99,10 +99,10 @@ if ~referenceLockedStatus(SDR_RX)
 end
 disp("External reference locked successfully.");
 
-% disp("Flushing SDR buffers...");
-% for i = 1:20
-%     [~, ~, ~] = SDR_RX();
-% end
+disp("Flushing SDR buffers...");
+for i = 1:20
+    [~, ~, ~] = SDR_RX();
+end
 
 %% ---------------- Boucle de mesure ----------------
 delaySamples_all = nan(numTrials,1);
@@ -111,17 +111,22 @@ delay_s_all      = nan(numTrials,1);
 
 for trial = 1:numTrials
 
+    tRelease0 = tic;
+    release(SDR_TX);
+    release(SDR_RX);
+    releaseElapsed = toc(tRelease0);
+
     % DIAGNOSTIC : le pattern d'overflow alterne parfaitement un trial sur
     % deux, meme avec un buffer 3x plus petit -> ce n'est probablement pas
     % une question de taille de buffer mais d'un etat/timing laisse par le
     % cycle release()+rearm precedent. On logue le temps de release() pour
     % voir s'il correle avec les essais qui echouent ensuite.
-    % fprintf('  [diag] release() a pris %.3f s\n', releaseElapsed);
+    fprintf('  [diag] release() a pris %.3f s\n', releaseElapsed);
 
     currentTime = getRadioTime(SDR_TX);
-    TriggerTime = currentTime + 7;              % margin: adapt according to USRP time
-    fprintf('current usrp time: %.9f s\n', currentTime);
-    fprintf('triger time: %.9f s\n', TriggerTime);
+    TriggerTime = currentTime + 8; % marge augmentee (etait 5s) par securite
+    % fprintf('current usrp time: %.9f s\n', currentTime);
+    % fprintf('triger time: %.9f s\n', TriggerTime);
     
     SDR_TX.EnableTimeTrigger = true;
     SDR_TX.TriggerTime       = TriggerTime;
@@ -130,8 +135,6 @@ for trial = 1:numTrials
 
     % ---- Un seul appel TX et un seul appel RX pour toute la trame ----
     SDR_TX(complex(txWaveform)); 
-    rt = getRadioTime(SDR_TX);
-    fprintf('current usrp time: %.9f s\n', rt);
 
     [rxWaveform, ~, overflow,rxTimestamp] = SDR_RX();
 
@@ -209,8 +212,6 @@ for trial = 1:numTrials
         trial, numTrials, delaySamples_all(trial), delay_s_all(trial)*1e3, peakToFloor_dB);
 
     pause(0.3); % petite pause entre essais
-    release(SDR_TX);
-    release(SDR_RX);
 end
 
 
@@ -268,12 +269,12 @@ function [SDR_rx, SDR_tx] = initSDR(Platform, SerialNum, ChannelMapping, ...
     SDR_rx = comm.SDRuReceiver(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=rxGain, MasterClockRate=MasterClockRate, ...
         DecimationFactor=DecimationFactor, OutputDataType=OutputDataType, ...
-        SamplesPerFrame=SamplesPerFrame, ClockSource="External", LocalOscillatorOffset=0, ...
+        SamplesPerFrame=SamplesPerFrame, ClockSource="External", LocalOscillatorOffset=1e6, ...
         PPSSource="External");
 
     SDR_tx = comm.SDRuTransmitter(Platform=Platform, SerialNum=SerialNum, ChannelMapping=ChannelMapping, ...
         CenterFrequency=CenterFrequency, Gain=txGain, MasterClockRate=MasterClockRate, ...
-        InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=0, ...
+        InterpolationFactor=InterpolationFactor, ClockSource="External", LocalOscillatorOffset=1e6, ...
         PPSSource="External");
   
 end
